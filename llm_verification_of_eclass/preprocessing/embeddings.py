@@ -38,7 +38,9 @@ def embed(
     return embedding_map
 
 
-def compute_embeddings_for_file(input_path: Path, logger: logging.Logger) -> None:
+def compute_embeddings_for_file(
+    input_path: Path, mode: str, logger: logging.Logger
+) -> None:
     """
     Reads a CSV file, extracts unique definitions, filters non-alphabetic definitions out, computes embeddings, and saves them.
     """
@@ -52,39 +54,37 @@ def compute_embeddings_for_file(input_path: Path, logger: logging.Logger) -> Non
         logger.error(f"Failed to read CSV {input_path}: {e}")
         return
 
-    if "definition" not in df.columns:
-        logger.error(f"Missing 'definition' column in {input_path}")
+    if mode not in df.columns:
+        logger.error(f"Missing '{mode}' column in {input_path}")
         return
 
-    # extracting definitions without NaNs
-    definitions = df["definition"].dropna().tolist()
-    logger.info(f"Found {len(definitions)} non-null definitions")
+    # extracting column without NaNs
+    column = df[mode].dropna().tolist()
+    logger.info(f"Found {len(column)} non-null {mode}s")
 
     # Regex matches strings with NO alphabetic characters
     invalid_pattern = re.compile(r"^[^a-zA-Z]*$")
-    valid_definitions = [
-        d for d in definitions if isinstance(d, str) and not invalid_pattern.match(d)
+    valid_entries = [
+        d for d in column if isinstance(d, str) and not invalid_pattern.match(d)
     ]
-    logger.info(
-        f"After filtering out invalid definitions: {len(valid_definitions)} remain"
-    )
+    logger.info(f"After filtering out invalid definitions: {len(valid_entries)} remain")
 
     # keep unique definitions only
-    unique_definitions = list(set(valid_definitions))
-    logger.info(f"Unique definitions to embed: {len(unique_definitions)}")
+    unique_entries = list(set(valid_entries))
+    logger.info(f"Unique definitions to embed: {len(unique_entries)}")
 
-    if not unique_definitions:
-        logger.warning("No valid definitions to embed. Exiting.")
+    if not unique_entries:
+        logger.warning("No valid entries to embed. Exiting.")
         return
 
     logger.info("Loading embedding model: BAAI/bge-large-en-v1.5")
     model = SentenceTransformer("BAAI/bge-large-en-v1.5")
 
     # Compute embeddings.
-    embedding_map = embed(unique_definitions, model, logger)
+    embedding_map = embed(unique_entries, model, logger)
 
     # Save embeddings to pickle file in the same directory
-    output_path = input_path.parent / "embedding_map.pickle"
+    output_path = input_path.parent / f"{mode}_embedding_map.pickle"
     try:
         with open(output_path, "wb") as f:
             pickle.dump(embedding_map, f)
@@ -94,18 +94,22 @@ def compute_embeddings_for_file(input_path: Path, logger: logging.Logger) -> Non
 
 
 if __name__ == "__main__":
+
+    mode = "definition"  # can be "definition" or "preferred-name"
     # Path to properties:
     input_file = Path(
         "../../data/extracted-properties/2-deduplicated-pair-properties/eclass-0.csv"
     )
 
     # Path to classes:
-    # input_file = Path("../../data/extracted-classes/2-deduplicated-pair-classes/eclass-0.csv")
+    # input_file = Path(
+    #     "../../data/extracted-classes/2-deduplicated-pair-classes/eclass-0.csv"
+    # )
 
     # Setup logger
     logger = LoggerFactory.get_logger(__name__)
     file_handler = logging.FileHandler(
-        "eclass-embedding-computation.txt", mode="w", encoding="utf-8"
+        f"eclass-{mode}-embedding-computation.txt", mode="w", encoding="utf-8"
     )
     file_handler.setLevel(logging.INFO)
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
@@ -113,4 +117,4 @@ if __name__ == "__main__":
     logger.addHandler(file_handler)
 
     # Compute embeddings
-    compute_embeddings_for_file(input_file, logger)
+    compute_embeddings_for_file(input_file, mode, logger)

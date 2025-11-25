@@ -174,7 +174,7 @@ if __name__ == "__main__":
     logger.addHandler(file_handler)
 
     # load embeddings
-    embedding_path = in_dir / "embedding_map.pickle"
+    embedding_path = in_dir / "definition_embedding_map.pickle"
     logger.info(f"Loading embeddings from: {embedding_path}")
     with open(embedding_path, "rb") as f:
         embedding_map = pickle.load(f)
