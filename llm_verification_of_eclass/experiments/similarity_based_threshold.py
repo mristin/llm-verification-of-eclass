@@ -14,6 +14,28 @@ import matplotlib.pyplot as plt
 from llm_verification_of_eclass.common.logger import LoggerFactory
 
 
+CLASSES_PLACEHOLDER_DEFINITIONS = [
+    "-no definition",
+    "Definition is still due",
+    "tbd",
+    "no definition available",
+    "No definition available",
+    "to be defined",
+    "Tbd",
+    "Definition is missing",
+    "To be defined later",
+    "To be defined",
+    "[Definition: missing]",
+]
+
+
+PROPERTIES_PLACEHOLDER_DEFINITIONS = [
+    "-no definition",
+    "tbd",
+    "TBD",
+]
+
+
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     """Computes cosine similarity between two vectors."""
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
@@ -104,13 +126,7 @@ def create_distribution_plot(
     similarities: np.ndarray, output_path: Path, mode: str, logger: logging.Logger
 ) -> None:
     """
-    Create a bar chart showing the distribution of cosine similarities.
-
-    Args:
-        similarities: Array of cosine similarity values
-        output_path: Path to save the plot
-        mode: 'properties' or 'classes'
-        logger: Logger instance
+    Creates a standard bar chart with the distribution of cosine similarities.
     """
     # Define bins from 0.0 to 1.0 in intervals of 0.1
     bins = np.arange(0, 1.1, 0.1)
@@ -173,39 +189,153 @@ def create_distribution_plot(
     plt.close()
 
     logger.info(f"Distribution plot saved to: {output_path}")
-    logger.info(
-        f"Statistics - Mean: {np.mean(similarities):.3f}, "
-        f"Median: {np.median(similarities):.3f}, "
-        f"Std: {np.std(similarities):.3f}"
+
+
+def create_stacked_distribution_plot(
+    results_df: pd.DataFrame,
+    placeholder_list: List[str],
+    output_path: Path,
+    mode: str,
+    logger: logging.Logger,
+) -> None:
+    """
+    Creates a stacked bar chart with placeholders and regular definitions.
+    """
+    # Separates placeholder values into separate list
+    placeholders_df = results_df["definition"].isin(placeholder_list)
+
+    sim_placeholders = results_df[placeholders_df]["cosine_similarity"].to_numpy(dtype=np.float64)
+    sim_regular = results_df[~placeholders_df]["cosine_similarity"].to_numpy(dtype=np.float64)
+
+    # Calculate statistics for placeholders
+    if len(sim_placeholders) > 0:
+        ph_mean = np.mean(sim_placeholders)
+        ph_std = np.std(sim_placeholders)
+        logger.info(f"\nPlaceholder Definitions Statistics ({mode}):")
+        logger.info(f"  Count: {len(sim_placeholders)}")
+        logger.info(f"  Mean: {ph_mean:.4f}")
+        logger.info(f"  Standard Deviation: {ph_std:.4f}")
+    else:
+        ph_mean, ph_std = 0.0, 0.0
+        logger.info(f"\nNo placeholder definitions found for mode: {mode}")
+
+    # Bins for graph with range [0, 1] and step 0.1
+    bins = np.arange(0, 1.1, 0.1)
+    bin_labels = [f"{bins[i]:.1f}-{bins[i + 1]:.1f}" for i in range(len(bins) - 1)]
+
+    # Calculate histograms
+    counts_ph, _ = np.histogram(sim_placeholders, bins=bins)
+    counts_reg, _ = np.histogram(sim_regular, bins=bins)
+
+    # Create stacked bar chart
+    plt.figure(figsize=(12, 6))
+
+    # Placeholders are at the bottom
+    plt.bar(
+        range(len(bin_labels)),
+        counts_ph,
+        color="#E37222",
+        edgecolor="black",
+        alpha=0.8,
+        label="Placeholder Definitions"
     )
+
+    # Rest of the definitions are on top
+    plt.bar(
+        range(len(bin_labels)),
+        counts_reg,
+        bottom=counts_ph,
+        color="steelblue",
+        edgecolor="black",
+        alpha=0.7,
+        label="Rest of the Definitions"
+    )
+
+    plt.xlabel("Cosine Similarity Range", fontsize=12)
+    plt.ylabel("Frequency", fontsize=12)
+    plt.title(
+        f"Distribution of Cosine Similarities (Stacked): {mode.capitalize()}",
+        fontsize=14,
+        fontweight="bold",
+    )
+    plt.xticks(range(len(bin_labels)), bin_labels, rotation=45, ha="right")
+    plt.grid(axis="y", alpha=0.3, linestyle="--")
+    plt.legend()
+
+    # Add value labels for total height
+    total_counts = counts_ph + counts_reg
+    for i, count in enumerate(total_counts):
+        if count > 0:
+            plt.text(
+                i,
+                count,
+                f"{int(count)}",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+            )
+
+    # Statistics for Placeholder boxes
+    if len(sim_placeholders) > 0:
+        stats_text = "Placeholder Stats:\n"
+        stats_text += f"Count: {len(sim_placeholders)}\n"
+        stats_text += f"Mean: {ph_mean:.3f}\n"
+        stats_text += f"Std: {ph_std:.3f}"
+
+        plt.text(
+            0.98,
+            0.97,
+            stats_text,
+            transform=plt.gca().transAxes,
+            fontsize=10,
+            verticalalignment="top",
+            horizontalalignment="right",
+            bbox=dict(boxstyle="round", facecolor="#E37222", alpha=0.3),
+        )
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    logger.info(f"Stacked distribution plot saved to: {output_path}")
 
 
 if __name__ == "__main__":
-    mode = "properties"  # should be either "classes" or "properties"
+    mode = "properties"  # Switch between "classes" or "properties"
 
+    # Define base paths relative to this script file
+    script_dir = Path(__file__).resolve().parent
+
+    # Setting parameters based on mode
     if mode == "properties":
-        in_dir = Path("../../data/extracted-properties/2-deduplicated-pair-properties")
-        out_dir = Path("../../data/2-experiment/properties-placeholder-definitions")
+        in_dir = script_dir / "../../data/extracted-properties/2-deduplicated-pair-properties"
+        out_dir = script_dir / "../../data/2-experiment/properties-placeholder-definitions"
+        placeholder_list = PROPERTIES_PLACEHOLDER_DEFINITIONS
     elif mode == "classes":
-        in_dir = Path("../../data/extracted-classes/2-deduplicated-pair-classes")
-        out_dir = Path("../../data/2-experiment/classes-placeholder-definitions")
+        in_dir = script_dir / "../../data/extracted-classes/2-deduplicated-pair-classes"
+        out_dir = script_dir / "../../data/2-experiment/classes-placeholder-definitions"
+        placeholder_list = CLASSES_PLACEHOLDER_DEFINITIONS
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
-    combined_eclass_path = in_dir / "eclass-0.csv"
+    in_dir = in_dir.resolve()
+    out_dir = out_dir.resolve()
 
-    # Create output directory if it doesn't exist
+    combined_eclass_path = in_dir / "eclass-0.csv"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Setup logger
     logger = LoggerFactory.get_logger(__name__)
     file_handler = logging.FileHandler(
-        f"experiment-2-similarity-threshold-{mode}.txt", mode="w", encoding="utf-8"
+        out_dir / f"experiment-2-similarity-threshold-{mode}.txt", mode="w", encoding="utf-8"
     )
     file_handler.setLevel(logging.INFO)
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
+
+    logger.info(f"Input directory: {in_dir}")
+    logger.info(f"Output directory: {out_dir}")
 
     # Load embeddings
     definition_embedding_path = in_dir / "definition_embedding_map.pickle"
@@ -238,15 +368,18 @@ if __name__ == "__main__":
     results_df.to_csv(output_csv_path, index=False, encoding="utf-8")
     logger.info(f"Results saved to: {output_csv_path}")
 
-    # Create distribution plot
+    # Standard distribution plot
     similarities = results_df["cosine_similarity"].to_numpy(dtype=np.float64)
     plot_path = out_dir / f"similarity_distribution_{mode}.png"
     create_distribution_plot(similarities, plot_path, mode, logger)
 
-    # Log summary statistics
-    logger.info("=" * 10)
-    logger.info("SUMMARY STATISTICS")
-    logger.info("=" * 10)
+    # Stacked distribution plot for known placeholder values
+    stacked_plot_path = out_dir / f"similarity_distribution_stacked_{mode}.png"
+    create_stacked_distribution_plot(results_df, placeholder_list, stacked_plot_path, mode, logger)
+
+
+    # Log summary statistics (General)
+    logger.info("Statistics summary:\n")
     logger.info(f"Total pairs analyzed: {len(results_df)}")
     logger.info(f"Mean similarity: {similarities.mean():.4f}")
     logger.info(f"Median similarity: {np.median(similarities):.4f}")
@@ -255,20 +388,5 @@ if __name__ == "__main__":
     logger.info(f"Max similarity: {similarities.max():.4f}")
     logger.info(f"25th percentile: {np.percentile(similarities, 25):.4f}")
     logger.info(f"75th percentile: {np.percentile(similarities, 75):.4f}")
-    logger.info("=" * 10)
-
-    # Log top 10 most similar pairs
-    logger.info("\nTop 10 most similar pairs:")
-    for idx, row in results_df.head(10).iterrows():
-        logger.info(
-            f"  {row['cosine_similarity']:.4f} - {row['preferred-name']} | {row['definition'][:100]}"
-        )
-
-    # Log bottom 10 least similar pairs
-    logger.info("\nBottom 10 least similar pairs:")
-    for idx, row in results_df.tail(10).iterrows():
-        logger.info(
-            f"  {row['cosine_similarity']:.4f} - {row['preferred-name']} | {row['definition'][:100]}"
-        )
 
     logger.info(f"\nExperiment completed successfully!")
