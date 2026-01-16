@@ -142,7 +142,9 @@ def get_embeddings_for_search(
 
     logger.info(f"---> {len(valid_texts)} unique definitions have embeddings.")
     if skipped > 0:
-        logger.warning(f"---> {skipped} definitions missing from pickle (will be skipped).")
+        logger.warning(
+            f"---> {skipped} definitions missing from pickle (will be skipped)."
+        )
 
     return valid_texts, np.array(valid_embeddings)
 
