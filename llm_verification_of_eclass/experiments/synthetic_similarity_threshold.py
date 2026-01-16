@@ -11,125 +11,221 @@ Method:
 
 import logging
 from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_distances
+from sklearn.metrics.pairwise import cosine_distances  # type: ignore
 
 
 model_name = "BAAI/bge-m3"
 
 synthetic_pairs = [
     # Abbreviations (10 pairs)
-    ("The maximum allowable temperature range for continuous industrial operation and handling",
-     "The max allowable temperature range for continuous industrial operation and handling"),
-    ("Standard specification defines the minimum required tensile strength for structural components",
-     "Standard specification defines the min required tensile strength for structural components"),
-    ("Manufacturing process documentation includes approximate dimensional tolerances for all critical features",
-     "Manufacturing process documentation includes approx dimensional tolerances for all critical features"),
-    ("Technical reference manual describes the operating temperature coefficient for precision measurement",
-     "Technical reference manual describes the operating temp coefficient for precision measurement"),
-    ("Equipment specification sheet lists the maximum permissible voltage for safe operation",
-     "Equipment specification sheet lists the max permissible voltage for safe operation"),
-    ("Installation guidelines recommend minimum clearance distances between adjacent electrical components",
-     "Installation guidelines recommend min clearance distances between adjacent electrical components"),
-    ("Product datasheet specifies the typical response time versus frequency characteristics",
-     "Product datasheet specifies the typical response time vs frequency characteristics"),
-    ("Quality control procedure requires verification of maximum deviation from nominal values",
-     "Quality control procedure requires verification of max deviation from nominal values"),
-    ("Safety documentation defines the minimum acceptable insulation resistance for compliance",
-     "Safety documentation defines the min acceptable insulation resistance for compliance"),
-    ("Calibration report indicates the approximate uncertainty margin for measurement accuracy",
-     "Calibration report indicates the approx uncertainty margin for measurement accuracy"),
-
+    (
+        "The maximum allowable temperature range for continuous industrial operation and handling",
+        "The max allowable temperature range for continuous industrial operation and handling",
+    ),
+    (
+        "Standard specification defines the minimum required tensile strength for structural components",
+        "Standard specification defines the min required tensile strength for structural components",
+    ),
+    (
+        "Manufacturing process documentation includes approximate dimensional tolerances for all critical features",
+        "Manufacturing process documentation includes approx dimensional tolerances for all critical features",
+    ),
+    (
+        "Technical reference manual describes the operating temperature coefficient for precision measurement",
+        "Technical reference manual describes the operating temp coefficient for precision measurement",
+    ),
+    (
+        "Equipment specification sheet lists the maximum permissible voltage for safe operation",
+        "Equipment specification sheet lists the max permissible voltage for safe operation",
+    ),
+    (
+        "Installation guidelines recommend minimum clearance distances between adjacent electrical components",
+        "Installation guidelines recommend min clearance distances between adjacent electrical components",
+    ),
+    (
+        "Product datasheet specifies the typical response time versus frequency characteristics",
+        "Product datasheet specifies the typical response time vs frequency characteristics",
+    ),
+    (
+        "Quality control procedure requires verification of maximum deviation from nominal values",
+        "Quality control procedure requires verification of max deviation from nominal values",
+    ),
+    (
+        "Safety documentation defines the minimum acceptable insulation resistance for compliance",
+        "Safety documentation defines the min acceptable insulation resistance for compliance",
+    ),
+    (
+        "Calibration report indicates the approximate uncertainty margin for measurement accuracy",
+        "Calibration report indicates the approx uncertainty margin for measurement accuracy",
+    ),
     # Punctuation (10 pairs)
-    ("Primary input voltage rating for alternating current electrical systems and connections",
-     "Primary input voltage rating (for alternating current electrical systems and connections)"),
-    ("Operating frequency range measured in hertz for all standard configurations",
-     "Operating frequency range, measured in hertz, for all standard configurations"),
-    ("Output signal characteristics including amplitude phase and distortion parameters",
-     "Output signal characteristics: amplitude, phase, and distortion parameters"),
-    ("Protective housing material specification meets international standards for durability",
-     "Protective housing material specification - meets international standards for durability"),
-    ("Connection terminal arrangement follows industry standard wiring configuration and layout",
-     "Connection terminal arrangement (follows industry standard wiring configuration and layout)"),
-    ("Thermal dissipation capacity under maximum load conditions for extended operation",
-     "Thermal dissipation capacity under maximum load conditions; for extended operation"),
-    ("Mounting bracket dimensions specified in millimeters for universal compatibility",
-     "Mounting bracket dimensions (specified in millimeters) for universal compatibility"),
-    ("Electrical characteristics defined at reference ambient temperature and humidity conditions",
-     "Electrical characteristics defined at reference ambient temperature and, humidity conditions"),
-    ("Performance degradation curve shows relationship between operating time and efficiency",
-     "Performance degradation curve shows relationship between: operating time and efficiency"),
-    ("Input impedance value measured across entire operational bandwidth and frequency spectrum",
-     "Input impedance value - measured across entire operational bandwidth and frequency spectrum"),
-
+    (
+        "Primary input voltage rating for alternating current electrical systems and connections",
+        "Primary input voltage rating (for alternating current electrical systems and connections)",
+    ),
+    (
+        "Operating frequency range measured in hertz for all standard configurations",
+        "Operating frequency range, measured in hertz, for all standard configurations",
+    ),
+    (
+        "Output signal characteristics including amplitude phase and distortion parameters",
+        "Output signal characteristics: amplitude, phase, and distortion parameters",
+    ),
+    (
+        "Protective housing material specification meets international standards for durability",
+        "Protective housing material specification - meets international standards for durability",
+    ),
+    (
+        "Connection terminal arrangement follows industry standard wiring configuration and layout",
+        "Connection terminal arrangement (follows industry standard wiring configuration and layout)",
+    ),
+    (
+        "Thermal dissipation capacity under maximum load conditions for extended operation",
+        "Thermal dissipation capacity under maximum load conditions; for extended operation",
+    ),
+    (
+        "Mounting bracket dimensions specified in millimeters for universal compatibility",
+        "Mounting bracket dimensions (specified in millimeters) for universal compatibility",
+    ),
+    (
+        "Electrical characteristics defined at reference ambient temperature and humidity conditions",
+        "Electrical characteristics defined at reference ambient temperature and, humidity conditions",
+    ),
+    (
+        "Performance degradation curve shows relationship between operating time and efficiency",
+        "Performance degradation curve shows relationship between: operating time and efficiency",
+    ),
+    (
+        "Input impedance value measured across entire operational bandwidth and frequency spectrum",
+        "Input impedance value - measured across entire operational bandwidth and frequency spectrum",
+    ),
     # Casing (10 pairs)
-    ("Nominal Operating Voltage Specification For Standard Industrial Equipment Applications",
-     "nominal operating voltage specification for standard industrial equipment applications"),
-    ("digital signal processing capability with advanced filtering and noise reduction",
-     "Digital Signal Processing Capability With Advanced Filtering And Noise Reduction"),
-    ("Maximum Continuous Current Rating Under Normal Ambient Temperature Conditions",
-     "maximum continuous current rating under normal ambient temperature conditions"),
-    ("environmental protection rating according to international ingress protection standards",
-     "Environmental Protection Rating According To International Ingress Protection Standards"),
-    ("Mechanical Stress Resistance Testing Protocol For Product Qualification And Validation",
-     "mechanical stress resistance testing protocol for product qualification and validation"),
-    ("output power capacity measured in watts for sustained operation",
-     "Output Power Capacity Measured In Watts For Sustained Operation"),
-    ("Installation Mounting Requirements Including Hardware Specifications And Torque Values",
-     "installation mounting requirements including hardware specifications and torque values"),
-    ("supply voltage tolerance range acceptable for reliable system operation",
-     "Supply Voltage Tolerance Range Acceptable For Reliable System Operation"),
-    ("Electromagnetic Interference Shielding Effectiveness Measured In Decibels Across Frequency Range",
-     "electromagnetic interference shielding effectiveness measured in decibels across frequency range"),
-    ("thermal cycling endurance specification for extended lifetime performance",
-     "Thermal Cycling Endurance Specification For Extended Lifetime Performance"),
-
+    (
+        "Nominal Operating Voltage Specification For Standard Industrial Equipment Applications",
+        "nominal operating voltage specification for standard industrial equipment applications",
+    ),
+    (
+        "digital signal processing capability with advanced filtering and noise reduction",
+        "Digital Signal Processing Capability With Advanced Filtering And Noise Reduction",
+    ),
+    (
+        "Maximum Continuous Current Rating Under Normal Ambient Temperature Conditions",
+        "maximum continuous current rating under normal ambient temperature conditions",
+    ),
+    (
+        "environmental protection rating according to international ingress protection standards",
+        "Environmental Protection Rating According To International Ingress Protection Standards",
+    ),
+    (
+        "Mechanical Stress Resistance Testing Protocol For Product Qualification And Validation",
+        "mechanical stress resistance testing protocol for product qualification and validation",
+    ),
+    (
+        "output power capacity measured in watts for sustained operation",
+        "Output Power Capacity Measured In Watts For Sustained Operation",
+    ),
+    (
+        "Installation Mounting Requirements Including Hardware Specifications And Torque Values",
+        "installation mounting requirements including hardware specifications and torque values",
+    ),
+    (
+        "supply voltage tolerance range acceptable for reliable system operation",
+        "Supply Voltage Tolerance Range Acceptable For Reliable System Operation",
+    ),
+    (
+        "Electromagnetic Interference Shielding Effectiveness Measured In Decibels Across Frequency Range",
+        "electromagnetic interference shielding effectiveness measured in decibels across frequency range",
+    ),
+    (
+        "thermal cycling endurance specification for extended lifetime performance",
+        "Thermal Cycling Endurance Specification For Extended Lifetime Performance",
+    ),
     # Spelling - localised (10 pairs)
-    ("The outer protective casing color must match standard industrial equipment specifications",
-     "The outer protective casing colour must match standard industrial equipment specifications"),
-    ("High performance fiber optic transmission cable with enhanced signal integrity characteristics",
-     "High performance fibre optic transmission cable with enhanced signal integrity characteristics"),
-    ("Mechanical component requires proper lubrication and periodic maintenance during operation",
-     "Mechanical component requires proper lubrication and periodic maintenance during operation"),
-    ("Electronic circuit board utilizes advanced signal optimization techniques for performance",
-     "Electronic circuit board utilises advanced signal optimization techniques for performance"),
-    ("Precision analog measurement system designed for accurate data acquisition applications",
-     "Precision analogue measurement system designed for accurate data acquisition applications"),
-    ("Chemical vapor deposition process ensures uniform coating thickness across substrate",
-     "Chemical vapour deposition process ensures uniform coating thickness across substrate"),
-    ("Equipment must be properly grounded to ensure safe operation and protection",
-     "Equipment must be properly earthed to ensure safe operation and protection"),
-    ("Manufacturing catalog includes comprehensive listing of available product configurations and options",
-     "Manufacturing catalogue includes comprehensive listing of available product configurations and options"),
-    ("System requires proper initialization procedure before commencing normal operational mode",
-     "System requires proper initialisation procedure before commencing normal operational mode"),
-    ("Defense grade components meet stringent military specification requirements for reliability",
-     "Defence grade components meet stringent military specification requirements for reliability"),
-
+    (
+        "The outer protective casing color must match standard industrial equipment specifications",
+        "The outer protective casing colour must match standard industrial equipment specifications",
+    ),
+    (
+        "High performance fiber optic transmission cable with enhanced signal integrity characteristics",
+        "High performance fibre optic transmission cable with enhanced signal integrity characteristics",
+    ),
+    (
+        "Mechanical component requires proper lubrication and periodic maintenance during operation",
+        "Mechanical component requires proper lubrication and periodic maintenance during operation",
+    ),
+    (
+        "Electronic circuit board utilizes advanced signal optimization techniques for performance",
+        "Electronic circuit board utilises advanced signal optimization techniques for performance",
+    ),
+    (
+        "Precision analog measurement system designed for accurate data acquisition applications",
+        "Precision analogue measurement system designed for accurate data acquisition applications",
+    ),
+    (
+        "Chemical vapor deposition process ensures uniform coating thickness across substrate",
+        "Chemical vapour deposition process ensures uniform coating thickness across substrate",
+    ),
+    (
+        "Equipment must be properly grounded to ensure safe operation and protection",
+        "Equipment must be properly earthed to ensure safe operation and protection",
+    ),
+    (
+        "Manufacturing catalog includes comprehensive listing of available product configurations and options",
+        "Manufacturing catalogue includes comprehensive listing of available product configurations and options",
+    ),
+    (
+        "System requires proper initialization procedure before commencing normal operational mode",
+        "System requires proper initialisation procedure before commencing normal operational mode",
+    ),
+    (
+        "Defense grade components meet stringent military specification requirements for reliability",
+        "Defence grade components meet stringent military specification requirements for reliability",
+    ),
     # Word Order / Minor Phrasing (10 pairs)
-    ("The nominal power consumption rating of the complete electrical assembly unit",
-     "The complete electrical assembly unit nominal power consumption rating"),
-    ("Recommended installation clearance distance for proper ventilation and thermal management",
-     "Clearance distance for proper ventilation and thermal management recommended installation"),
-    ("Standard operating temperature range specified for ambient environmental conditions",
-     "Ambient environmental conditions specified standard operating temperature range"),
-    ("Maximum permissible load capacity for structural mounting and support framework",
-     "Structural mounting and support framework maximum permissible load capacity"),
-    ("Typical response time characteristics measured under specified test conditions",
-     "Measured under specified test conditions typical response time characteristics"),
-    ("Input signal voltage level requirements for proper system functionality",
-     "Proper system functionality input signal voltage level requirements"),
-    ("External dimensions of the housing enclosure including mounting provisions",
-     "Housing enclosure external dimensions including mounting provisions"),
-    ("Minimum acceptable insulation resistance value for electrical safety compliance",
-     "Electrical safety compliance minimum acceptable insulation resistance value"),
-    ("Operating frequency bandwidth limitations for signal processing applications",
-     "Signal processing applications operating frequency bandwidth limitations"),
-    ("Net weight specification of the assembled unit without packaging materials",
-     "Assembled unit net weight specification without packaging materials")
+    (
+        "The nominal power consumption rating of the complete electrical assembly unit",
+        "The complete electrical assembly unit nominal power consumption rating",
+    ),
+    (
+        "Recommended installation clearance distance for proper ventilation and thermal management",
+        "Clearance distance for proper ventilation and thermal management recommended installation",
+    ),
+    (
+        "Standard operating temperature range specified for ambient environmental conditions",
+        "Ambient environmental conditions specified standard operating temperature range",
+    ),
+    (
+        "Maximum permissible load capacity for structural mounting and support framework",
+        "Structural mounting and support framework maximum permissible load capacity",
+    ),
+    (
+        "Typical response time characteristics measured under specified test conditions",
+        "Measured under specified test conditions typical response time characteristics",
+    ),
+    (
+        "Input signal voltage level requirements for proper system functionality",
+        "Proper system functionality input signal voltage level requirements",
+    ),
+    (
+        "External dimensions of the housing enclosure including mounting provisions",
+        "Housing enclosure external dimensions including mounting provisions",
+    ),
+    (
+        "Minimum acceptable insulation resistance value for electrical safety compliance",
+        "Electrical safety compliance minimum acceptable insulation resistance value",
+    ),
+    (
+        "Operating frequency bandwidth limitations for signal processing applications",
+        "Signal processing applications operating frequency bandwidth limitations",
+    ),
+    (
+        "Net weight specification of the assembled unit without packaging materials",
+        "Assembled unit net weight specification without packaging materials",
+    ),
 ]
 
 
-def get_logger():
+def get_logger() -> logging.Logger:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     return logging.getLogger("Calibration")
 
@@ -149,7 +245,6 @@ if __name__ == "__main__":
         distances.append(dist)
         logger.info(f"Dist: {dist:.5f} | '{text_a}' and '{text_b}'")
 
-
     max_dist = max(distances)
     avg_dist = sum(distances) / len(distances)
 
@@ -163,3 +258,120 @@ if __name__ == "__main__":
     logger.info(f"Threshold (Strict): {rec_strict:.5f}")
     logger.info(f"Threshold (+10%):   {rec_buffer:.5f}")
     logger.info("Use the value above in the next script (4b_run_discovery.py)")
+
+
+"""
+Loading Model: BAAI/bge-m3
+Use pytorch device_name: mps
+Load pretrained SentenceTransformer: BAAI/bge-m3
+
+Calculating Distances for 50 Pairs
+Batches: 100%|██████████| 1/1 [00:00<00:00,  1.87it/s]
+Dist: 0.00730 | 'The maximum allowable temperature range for continuous industrial operation and handling' and 'The max allowable temperature range for continuous industrial operation and handling'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 19.08it/s]
+Dist: 0.00874 | 'Standard specification defines the minimum required tensile strength for structural components' and 'Standard specification defines the min required tensile strength for structural components'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 18.05it/s]
+Dist: 0.01087 | 'Manufacturing process documentation includes approximate dimensional tolerances for all critical features' and 'Manufacturing process documentation includes approx dimensional tolerances for all critical features'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 35.56it/s]
+Dist: 0.02089 | 'Technical reference manual describes the operating temperature coefficient for precision measurement' and 'Technical reference manual describes the operating temp coefficient for precision measurement'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 41.68it/s]
+Dist: 0.00317 | 'Equipment specification sheet lists the maximum permissible voltage for safe operation' and 'Equipment specification sheet lists the max permissible voltage for safe operation'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 18.44it/s]
+Dist: 0.00541 | 'Installation guidelines recommend minimum clearance distances between adjacent electrical components' and 'Installation guidelines recommend min clearance distances between adjacent electrical components'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 19.79it/s]
+Dist: 0.00425 | 'Product datasheet specifies the typical response time versus frequency characteristics' and 'Product datasheet specifies the typical response time vs frequency characteristics'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 40.05it/s]
+Dist: 0.00920 | 'Quality control procedure requires verification of maximum deviation from nominal values' and 'Quality control procedure requires verification of max deviation from nominal values'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 40.98it/s]
+Dist: 0.00840 | 'Safety documentation defines the minimum acceptable insulation resistance for compliance' and 'Safety documentation defines the min acceptable insulation resistance for compliance'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 17.13it/s]
+Dist: 0.00847 | 'Calibration report indicates the approximate uncertainty margin for measurement accuracy' and 'Calibration report indicates the approx uncertainty margin for measurement accuracy'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 41.38it/s]
+Dist: 0.03987 | 'Primary input voltage rating for alternating current electrical systems and connections' and 'Primary input voltage rating (for alternating current electrical systems and connections)'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 39.53it/s]
+Dist: 0.01376 | 'Operating frequency range measured in hertz for all standard configurations' and 'Operating frequency range, measured in hertz, for all standard configurations'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 32.67it/s]
+Dist: 0.04812 | 'Output signal characteristics including amplitude phase and distortion parameters' and 'Output signal characteristics: amplitude, phase, and distortion parameters'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 28.13it/s]
+Dist: 0.03031 | 'Protective housing material specification meets international standards for durability' and 'Protective housing material specification - meets international standards for durability'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 27.73it/s]
+Dist: 0.06295 | 'Connection terminal arrangement follows industry standard wiring configuration and layout' and 'Connection terminal arrangement (follows industry standard wiring configuration and layout)'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 40.82it/s]
+Dist: 0.04358 | 'Thermal dissipation capacity under maximum load conditions for extended operation' and 'Thermal dissipation capacity under maximum load conditions; for extended operation'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 34.03it/s]
+Dist: 0.01776 | 'Mounting bracket dimensions specified in millimeters for universal compatibility' and 'Mounting bracket dimensions (specified in millimeters) for universal compatibility'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 42.85it/s]
+Dist: 0.00763 | 'Electrical characteristics defined at reference ambient temperature and humidity conditions' and 'Electrical characteristics defined at reference ambient temperature and, humidity conditions'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 29.77it/s]
+Dist: 0.02066 | 'Performance degradation curve shows relationship between operating time and efficiency' and 'Performance degradation curve shows relationship between: operating time and efficiency'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 15.54it/s]
+Dist: 0.04710 | 'Input impedance value measured across entire operational bandwidth and frequency spectrum' and 'Input impedance value - measured across entire operational bandwidth and frequency spectrum'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 36.38it/s]
+Dist: 0.05936 | 'Nominal Operating Voltage Specification For Standard Industrial Equipment Applications' and 'nominal operating voltage specification for standard industrial equipment applications'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 40.69it/s]
+Dist: 0.03878 | 'digital signal processing capability with advanced filtering and noise reduction' and 'Digital Signal Processing Capability With Advanced Filtering And Noise Reduction'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 20.25it/s]
+Dist: 0.08763 | 'Maximum Continuous Current Rating Under Normal Ambient Temperature Conditions' and 'maximum continuous current rating under normal ambient temperature conditions'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 17.03it/s]
+Dist: 0.04268 | 'environmental protection rating according to international ingress protection standards' and 'Environmental Protection Rating According To International Ingress Protection Standards'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 30.87it/s]
+Dist: 0.08206 | 'Mechanical Stress Resistance Testing Protocol For Product Qualification And Validation' and 'mechanical stress resistance testing protocol for product qualification and validation'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 34.03it/s]
+Dist: 0.07990 | 'output power capacity measured in watts for sustained operation' and 'Output Power Capacity Measured In Watts For Sustained Operation'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 37.86it/s]
+Dist: 0.08278 | 'Installation Mounting Requirements Including Hardware Specifications And Torque Values' and 'installation mounting requirements including hardware specifications and torque values'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 40.93it/s]
+Dist: 0.06039 | 'supply voltage tolerance range acceptable for reliable system operation' and 'Supply Voltage Tolerance Range Acceptable For Reliable System Operation'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 19.93it/s]
+Dist: 0.06832 | 'Electromagnetic Interference Shielding Effectiveness Measured In Decibels Across Frequency Range' and 'electromagnetic interference shielding effectiveness measured in decibels across frequency range'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 41.94it/s]
+Dist: 0.05504 | 'thermal cycling endurance specification for extended lifetime performance' and 'Thermal Cycling Endurance Specification For Extended Lifetime Performance'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 36.84it/s]
+Dist: 0.01170 | 'The outer protective casing color must match standard industrial equipment specifications' and 'The outer protective casing colour must match standard industrial equipment specifications'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 33.48it/s]
+Dist: 0.00956 | 'High performance fiber optic transmission cable with enhanced signal integrity characteristics' and 'High performance fibre optic transmission cable with enhanced signal integrity characteristics'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 32.91it/s]
+Dist: 0.00000 | 'Mechanical component requires proper lubrication and periodic maintenance during operation' and 'Mechanical component requires proper lubrication and periodic maintenance during operation'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 32.58it/s]
+Dist: 0.00427 | 'Electronic circuit board utilizes advanced signal optimization techniques for performance' and 'Electronic circuit board utilises advanced signal optimization techniques for performance'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 42.64it/s]
+Dist: 0.03280 | 'Precision analog measurement system designed for accurate data acquisition applications' and 'Precision analogue measurement system designed for accurate data acquisition applications'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 41.76it/s]
+Dist: 0.06306 | 'Chemical vapor deposition process ensures uniform coating thickness across substrate' and 'Chemical vapour deposition process ensures uniform coating thickness across substrate'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 40.83it/s]
+Dist: 0.05750 | 'Equipment must be properly grounded to ensure safe operation and protection' and 'Equipment must be properly earthed to ensure safe operation and protection'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 42.59it/s]
+Dist: 0.03848 | 'Manufacturing catalog includes comprehensive listing of available product configurations and options' and 'Manufacturing catalogue includes comprehensive listing of available product configurations and options'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 30.06it/s]
+Dist: 0.00097 | 'System requires proper initialization procedure before commencing normal operational mode' and 'System requires proper initialisation procedure before commencing normal operational mode'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 31.90it/s]
+Dist: 0.00773 | 'Defense grade components meet stringent military specification requirements for reliability' and 'Defence grade components meet stringent military specification requirements for reliability'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 33.26it/s]
+Dist: 0.02521 | 'The nominal power consumption rating of the complete electrical assembly unit' and 'The complete electrical assembly unit nominal power consumption rating'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 36.07it/s]
+Dist: 0.03814 | 'Recommended installation clearance distance for proper ventilation and thermal management' and 'Clearance distance for proper ventilation and thermal management recommended installation'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 20.77it/s]
+Dist: 0.05419 | 'Standard operating temperature range specified for ambient environmental conditions' and 'Ambient environmental conditions specified standard operating temperature range'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 43.08it/s]
+Dist: 0.04975 | 'Maximum permissible load capacity for structural mounting and support framework' and 'Structural mounting and support framework maximum permissible load capacity'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 29.96it/s]
+Dist: 0.04012 | 'Typical response time characteristics measured under specified test conditions' and 'Measured under specified test conditions typical response time characteristics'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 15.52it/s]
+Dist: 0.05789 | 'Input signal voltage level requirements for proper system functionality' and 'Proper system functionality input signal voltage level requirements'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 36.49it/s]
+Dist: 0.03782 | 'External dimensions of the housing enclosure including mounting provisions' and 'Housing enclosure external dimensions including mounting provisions'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 41.04it/s]
+Dist: 0.04138 | 'Minimum acceptable insulation resistance value for electrical safety compliance' and 'Electrical safety compliance minimum acceptable insulation resistance value'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 43.53it/s]
+Dist: 0.03793 | 'Operating frequency bandwidth limitations for signal processing applications' and 'Signal processing applications operating frequency bandwidth limitations'
+Batches: 100%|██████████| 1/1 [00:00<00:00, 41.18it/s]
+Dist: 0.04984 | 'Net weight specification of the assembled unit without packaging materials' and 'Assembled unit net weight specification without packaging materials'
+
+
+Results:
+Average Distance: 0.03467
+Maximum Distance: 0.08763 (The furthest synonym pair)
+Threshold (Strict): 0.08763
+Threshold (+10%):   0.09639
+Use the value above in the next script (4b_run_discovery.py)
+"""
