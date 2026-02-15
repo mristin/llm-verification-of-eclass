@@ -212,50 +212,229 @@ def is_chemical_definition(text_a: str, text_b: str) -> bool:
     return False
 
 
-def _needs_remediation(diagnosis: str) -> bool:
-    """Determine if definitions need remediation based on diagnosis category.
+@dataclass
+class AuditSignals:
+    """Structured results from the three focused audit prompts.
 
-    :param diagnosis: The diagnostic text from initial analysis
-    :return: True if remediation is needed, False otherwise
+    :ivar alignment_a: Whether Definition A accurately describes Name A
+    :ivar alignment_b: Whether Definition B accurately describes Name B
+    :ivar alignment_a_justification: One-sentence justification for alignment_a
+    :ivar alignment_b_justification: One-sentence justification for alignment_b
+    :ivar names_distinct: Whether the two names are conceptually distinct
+    :ivar names_distinct_justification: One-sentence justification for names_distinct
+    :ivar defs_explain_distinction: Whether the definitions explain the distinction
+                                    (None when names_distinct is False — prompt skipped)
+    :ivar defs_explain_distinction_justification: Justification, or None when skipped
     """
-    # Categories that indicate definitions need improvement
-    problematic_categories = [
-        "DEFINITION INSUFFICIENT",
-        "MISALIGNMENT",
-    ]
-    return any(category in diagnosis for category in problematic_categories)
+
+    alignment_a: bool
+    alignment_b: bool
+    alignment_a_justification: str
+    alignment_b_justification: str
+    names_distinct: bool
+    names_distinct_justification: str
+    defs_explain_distinction: Optional[bool]
+    defs_explain_distinction_justification: Optional[str]
 
 
-def _parse_fix_section(diagnosis: str) -> List[str]:
-    """Parse the Fix section to identify which definitions need updating.
+def _parse_yes_no_response(response: str) -> Tuple[bool, str]:
+    """Parse a YES/NO — [justification] response from the LLM.
 
-    :param diagnosis: The complete diagnostic text
-    :return: List containing 'A', 'B', both, or empty list
+    :param response: Raw LLM response text
+    :return: Tuple of (bool answer, justification string)
+    :raise ValueError: If response does not start with YES or NO
     """
-    terms_to_fix = []  # type: List[str]
+    stripped = response.strip()
+    upper = stripped.upper()
 
-    # Find the Fix section
-    lines = diagnosis.split("\n")
-    fix_line = ""
+    if upper.startswith("YES"):
+        answer = True
+    elif upper.startswith("NO"):
+        answer = False
+    else:
+        raise ValueError(f"Expected YES/NO response, got: {stripped!r}")
 
-    for line in lines:
-        if line.strip().startswith("- Fix:") or line.strip().startswith("Fix:"):
-            fix_line = line.strip()
-            break
+    # Extract justification after the delimiter (dash, colon, or whitespace)
+    remainder = stripped[3:].lstrip(" —–-:")
+    justification = remainder.strip() if remainder.strip() else "(no justification provided)"
 
-    if not fix_line:
-        return terms_to_fix
+    return answer, justification
 
-    # Parse which definitions are mentioned
-    fix_upper = fix_line.upper()
 
-    if "DEF A" in fix_upper or "DEFINITION A" in fix_upper:
-        terms_to_fix.append("A")
+_ALIGNMENT_SYSTEM_PROMPT = (
+    "You are a precise terminologist. "
+    "Answer only YES or NO, then one sentence of justification. "
+    "Format: YES/NO — [one sentence]"
+)
 
-    if "DEF B" in fix_upper or "DEFINITION B" in fix_upper:
-        terms_to_fix.append("B")
+_NAMES_DISTINCT_SYSTEM_PROMPT = (
+    "You are a precise terminologist. "
+    "Answer only YES or NO, then one sentence of justification. "
+    "Format: YES/NO — [one sentence]"
+)
 
-    return terms_to_fix
+_DEFS_EXPLAIN_SYSTEM_PROMPT = (
+    "You are a precise terminologist. "
+    "Answer only YES or NO, then one sentence of justification. "
+    "Format: YES/NO — [one sentence]"
+)
+
+
+def _check_alignment(client: LLMClient, name: str, definition: str) -> Tuple[bool, str]:
+    """Prompt 1 — ask whether a single definition accurately describes its name.
+
+    :param client: LLM client
+    :param name: Preferred name of the concept
+    :param definition: Definition text to evaluate
+    :return: Tuple of (alignment result, justification)
+    """
+    user_prompt = (
+        "Does this definition accurately describe this name?\n\n"
+        f"Name: {name}\n"
+        f"Definition: {definition}\n\n"
+        "Answer format: YES/NO — [one sentence]"
+    )
+    response = client.create_completion(_ALIGNMENT_SYSTEM_PROMPT, user_prompt)
+    return _parse_yes_no_response(response)
+
+
+def _check_names_distinct(client: LLMClient, name_1: str, name_2: str) -> Tuple[bool, str]:
+    """Prompt 2 — ask whether two names are conceptually distinct.
+
+    :param client: LLM client
+    :param name_1: First preferred name
+    :param name_2: Second preferred name
+    :return: Tuple of (distinct result, justification)
+    """
+    user_prompt = (
+        "Are these two names conceptually distinct "
+        "(i.e., they refer to different things, not synonyms)?\n\n"
+        f"Name A: {name_1}\n"
+        f"Name B: {name_2}\n\n"
+        "Answer format: YES/NO — [one sentence]"
+    )
+    response = client.create_completion(_NAMES_DISTINCT_SYSTEM_PROMPT, user_prompt)
+    return _parse_yes_no_response(response)
+
+
+def _check_defs_explain_distinction(
+    client: LLMClient,
+    name_1: str, def_1: str,
+    name_2: str, def_2: str,
+) -> Tuple[bool, str]:
+    """Prompt 3 — ask whether definitions sufficiently explain the distinction between names.
+
+    Only called when names are already confirmed distinct.
+
+    :param client: LLM client
+    :param name_1: First preferred name
+    :param def_1: First definition
+    :param name_2: Second preferred name
+    :param def_2: Second definition
+    :return: Tuple of (explanation result, justification)
+    """
+    user_prompt = (
+        "Do these two definitions sufficiently explain what distinguishes "
+        "the two concepts from each other?\n\n"
+        f"Name A: {name_1}\n"
+        f"Definition A: {def_1}\n\n"
+        f"Name B: {name_2}\n"
+        f"Definition B: {def_2}\n\n"
+        "Answer format: YES/NO — [one sentence]"
+    )
+    response = client.create_completion(_DEFS_EXPLAIN_SYSTEM_PROMPT, user_prompt)
+    return _parse_yes_no_response(response)
+
+
+def run_audit_prompts(
+    client: LLMClient,
+    name_1: str, def_1: str,
+    name_2: str, def_2: str,
+    logger: logging.Logger,
+) -> AuditSignals:
+    """Run all three focused audit prompts and return structured signals.
+
+    Prompt 3 is skipped when names are not distinct (TRUE REDUNDANCY path).
+
+    :param client: LLM client
+    :param name_1: First preferred name
+    :param def_1: First definition
+    :param name_2: Second preferred name
+    :param def_2: Second definition
+    :param logger: Logger instance
+    :return: AuditSignals with results from each prompt
+    """
+    alignment_a, just_a = _check_alignment(client, name_1, def_1)
+    logger.info(f"  [Prompt 1a] Alignment A: {'YES' if alignment_a else 'NO'} — {just_a}")
+
+    alignment_b, just_b = _check_alignment(client, name_2, def_2)
+    logger.info(f"  [Prompt 1b] Alignment B: {'YES' if alignment_b else 'NO'} — {just_b}")
+
+    names_distinct, just_names = _check_names_distinct(client, name_1, name_2)
+    logger.info(f"  [Prompt 2]  Names distinct: {'YES' if names_distinct else 'NO'} — {just_names}")
+
+    if names_distinct:
+        defs_explain, just_defs = _check_defs_explain_distinction(
+            client, name_1, def_1, name_2, def_2
+        )
+        logger.info(f"  [Prompt 3]  Defs explain distinction: {'YES' if defs_explain else 'NO'} — {just_defs}")
+    else:
+        defs_explain = None
+        just_defs = None
+        logger.info("  [Prompt 3]  Skipped (names not distinct)")
+
+    return AuditSignals(
+        alignment_a=alignment_a,
+        alignment_b=alignment_b,
+        alignment_a_justification=just_a,
+        alignment_b_justification=just_b,
+        names_distinct=names_distinct,
+        names_distinct_justification=just_names,
+        defs_explain_distinction=defs_explain,
+        defs_explain_distinction_justification=just_defs,
+    )
+
+
+def compute_verdict(signals: AuditSignals) -> str:
+    """Derive a deterministic verdict from the three audit signals.
+
+    Decision table:
+    - Any alignment fails                      → MISALIGNMENT
+    - Both align, names not distinct           → TRUE REDUNDANCY
+    - Both align, names distinct, defs weak    → DEFINITION INSUFFICIENT
+    - Both align, names distinct, defs strong  → VALID DISTINCTION
+
+    :param signals: Populated AuditSignals instance
+    :return: One of the four verdict strings
+    """
+    if not signals.alignment_a or not signals.alignment_b:
+        return "MISALIGNMENT"
+    if not signals.names_distinct:
+        return "TRUE REDUNDANCY"
+    if not signals.defs_explain_distinction:
+        return "DEFINITION INSUFFICIENT"
+    return "VALID DISTINCTION"
+
+
+def _terms_to_fix_from_signals(signals: AuditSignals) -> List[str]:
+    """Derive which definitions need remediation directly from audit signals.
+
+    Replaces the fragile string-parsing of the old _parse_fix_section.
+
+    :param signals: Populated AuditSignals instance
+    :return: List of 'A', 'B', both, or empty
+    """
+    verdict = compute_verdict(signals)
+    if verdict == "MISALIGNMENT":
+        terms = []
+        if not signals.alignment_a:
+            terms.append("A")
+        if not signals.alignment_b:
+            terms.append("B")
+        return terms
+    if verdict == "DEFINITION INSUFFICIENT":
+        return ["A", "B"]
+    return []
 
 
 def generate_iso_definition(client: LLMClient, term_name: str, system_prompt: str, user_prompt_template: str) -> str:
@@ -278,7 +457,7 @@ def remediate_definitions(
     def_1: str,
     name_2: str,
     def_2: str,
-    audit_response: str,
+    signals: AuditSignals,
     iso_system_prompt: str,
     iso_user_prompt_template: str,
     logger: logging.Logger,
@@ -290,14 +469,14 @@ def remediate_definitions(
     :param def_1: First definition
     :param name_2: Second name
     :param def_2: Second definition
-    :param audit_response: The complete audit diagnosis
+    :param signals: Structured audit signals from the three focused prompts
     :param iso_system_prompt: System prompt for ISO definition generation
     :param iso_user_prompt_template: User prompt template for ISO definition generation
     :param logger: Logger instance
     :return: Dictionary mapping 'A' and/or 'B' to new definitions
     """
-    # Identify which definitions need fixing
-    terms_to_fix = _parse_fix_section(audit_response)
+    # Derive which definitions need fixing directly from signals — no string parsing
+    terms_to_fix = _terms_to_fix_from_signals(signals)
 
     if not terms_to_fix:
         return {}
@@ -329,20 +508,16 @@ def analyze_tuple(
     client: LLMClient,
     tuple_data: List[str],
     tuple_id: int,
-    audit_system_prompt: str,
-    audit_user_prompt_template: str,
     iso_system_prompt: str,
     iso_user_prompt_template: str,
     logger: logging.Logger,
     enable_remediation: bool = True,
 ) -> Dict:
-    """Analyze a single name-definition pair.
+    """Analyze a single name-definition pair using three focused audit prompts.
 
     :param client: LLM client to use for analysis
     :param tuple_data: List containing [name_1, def_1, name_2, def_2]
     :param tuple_id: Number of this tuple
-    :param audit_system_prompt: System instruction for audit LLM
-    :param audit_user_prompt_template: User prompt template for audit
     :param iso_system_prompt: System prompt for ISO definition generation
     :param iso_user_prompt_template: User prompt template for ISO definition generation
     :param logger: Logger instance for logging
@@ -364,26 +539,27 @@ def analyze_tuple(
     logger.info(f"\tDef 2: {def_2}")
     logger.info("")
 
-    user_prompt = audit_user_prompt_template.format(
-        name_1=name_1, def_1=def_1, name_2=name_2, def_2=def_2
-    )
-
     try:
-        audit_response = client.create_completion(audit_system_prompt, user_prompt)
+        # Run the three focused audit prompts
+        signals = run_audit_prompts(client, name_1, def_1, name_2, def_2, logger)
+
+        # Derive verdict from signals — no LLM call, no string parsing
+        verdict = compute_verdict(signals)
+        logger.info(f"  [Verdict]   {verdict}")
+        logger.info("\n" + "=" * 80 + "\n")
 
         result = {
             "tuple_id": tuple_id,
             "name_1": name_1,
             "name_2": name_2,
-            "audit_response": audit_response,
+            "audit_signals": signals,
+            "audit_response": verdict,  # kept for CSV compatibility
             "status": "success",
         }
 
-        logger.info(result["audit_response"])
-        logger.info("\n" + "=" * 80 + "\n")
-
         # region Remediation
-        if enable_remediation and _needs_remediation(audit_response):
+        needs_fix = verdict in ("MISALIGNMENT", "DEFINITION INSUFFICIENT")
+        if enable_remediation and needs_fix:
             logger.info("\n--- Remediation Part ---")
 
             try:
@@ -393,7 +569,7 @@ def analyze_tuple(
                     def_1=def_1,
                     name_2=name_2,
                     def_2=def_2,
-                    audit_response=audit_response,
+                    signals=signals,
                     iso_system_prompt=iso_system_prompt,
                     iso_user_prompt_template=iso_user_prompt_template,
                     logger=logger,
@@ -423,6 +599,7 @@ def analyze_tuple(
             "tuple_id": tuple_id,
             "name_1": name_1,
             "name_2": name_2,
+            "audit_signals": None,
             "audit_response": None,
             "status": "error",
             "error": str(e),
@@ -485,7 +662,11 @@ def remove_id_from_preferred_name(preferred_name: str) -> str:
 def extract_verdict(audit_response: str) -> str:
     """Extract the verdict from the audit response.
 
-    :param audit_response: The complete audit response text
+    With the decoupled audit, audit_response is already the verdict string
+    produced by compute_verdict(). This function is kept for CSV compatibility
+    and as a safety net for UNKNOWN responses.
+
+    :param audit_response: The verdict string (or empty/None on error)
     :return: One of the 4 verdicts or "UNKNOWN" if not found
     """
     verdicts = ["VALID DISTINCTION", "DEFINITION INSUFFICIENT", "MISALIGNMENT", "TRUE REDUNDANCY"]
@@ -579,47 +760,9 @@ def main() -> List[Dict]:
     logger.addHandler(file_handler)
 
     # Define all prompts
-    audit_system_prompt = """You are a precise Terminologist and Data Quality Auditor. 
-Your goal is NOT to decide if concepts should be merged, but to diagnose if the definitions accurately distinguish the provided Preferred Names. 
-You must be concise (max 1-2 sentences per point) and objective."""
-
-    audit_user_prompt_template = """Input Data:
-Tuple A:
-- Name: {name_1}
-- Definition: {def_1}
-
-Tuple B:
-- Name: {name_2}
-- Definition: {def_2}
-
-Task Instructions:
-Analyze the relationship between Names and Definitions through three specific checks.
-
-1. Internal Alignment Check
-- Does Def A accurately describe Name A?
-- Does Def B accurately describe Name B?
-
-2. Distinction Gap Analysis
-- Name Delta: How distinct are the two Preferred Names conceptually?
-- Definition Delta: How distinct are the two Definitions?
-- Consistency: Does the difference between the Definitions match the difference between the Names? (e.g., If names are distinct, do definitions explain why?)
-
-3. Diagnostic Verdict
-Choose exactly ONE audit_response from the list below:
-- VALID DISTINCTION: Names differ and definitions clearly explain that difference.
-- DEFINITION INSUFFICIENT: Names are distinct, but definitions are too similar to explain the distinction.
-- MISALIGNMENT: One or both definitions do not accurately reflect their own Preferred Name.
-- TRUE REDUNDANCY: Names are synonyms and definitions are identical.
-
-Output Format:
-### Analysis
-- Alignment: [Pass/Fail check on whether definitions fit their names]
-- Gap Consistency: [Does the definition difference scale with the name difference?]
-
-### Diagnosis
-- Category: [One of the 4 categories above]
-- Fix: [Briefly state what needs to change (e.g., "Sharpen Def A to specify X," or "None needed")]
-"""
+    # Audit prompts are module-level constants (_ALIGNMENT_SYSTEM_PROMPT,
+    # _NAMES_DISTINCT_SYSTEM_PROMPT, _DEFS_EXPLAIN_SYSTEM_PROMPT) used directly
+    # by run_audit_prompts(). Only the ISO remediation prompts are passed around.
 
     iso_system_prompt = """You are a strict Terminologist. 
 Your sole purpose is to generate a single, formal definition for a provided Term Name that complies with ISO 704:2022 standards.
@@ -640,10 +783,12 @@ Write the ISO 704:2022 definition now."""
     logger.info("="*80)
     logger.info("PROMPTS USED IN THIS RUN")
     logger.info("="*80)
-    logger.info("\n--- AUDIT SYSTEM PROMPT ---")
-    logger.info(audit_system_prompt)
-    logger.info("\n--- AUDIT USER PROMPT TEMPLATE ---")
-    logger.info(audit_user_prompt_template)
+    logger.info("\n--- AUDIT PROMPT 1 (alignment, run once per name/def pair) ---")
+    logger.info(_ALIGNMENT_SYSTEM_PROMPT)
+    logger.info("\n--- AUDIT PROMPT 2 (name distinctiveness) ---")
+    logger.info(_NAMES_DISTINCT_SYSTEM_PROMPT)
+    logger.info("\n--- AUDIT PROMPT 3 (definition distinction, conditional) ---")
+    logger.info(_DEFS_EXPLAIN_SYSTEM_PROMPT)
     logger.info("\n--- ISO SYSTEM PROMPT ---")
     logger.info(iso_system_prompt)
     logger.info("\n--- ISO USER PROMPT TEMPLATE ---")
@@ -742,7 +887,6 @@ Write the ISO 704:2022 definition now."""
         for i, sample in enumerate(test_samples):
             result = analyze_tuple(
                 client, sample, i,
-                audit_system_prompt, audit_user_prompt_template,
                 iso_system_prompt, iso_user_prompt_template,
                 logger
             )
@@ -786,7 +930,6 @@ Write the ISO 704:2022 definition now."""
             tuple_data = [clean_name_a, text_a, clean_name_b, text_b]
             result = analyze_tuple(
                 client, tuple_data, i,
-                audit_system_prompt, audit_user_prompt_template,
                 iso_system_prompt, iso_user_prompt_template,
                 logger
             )
