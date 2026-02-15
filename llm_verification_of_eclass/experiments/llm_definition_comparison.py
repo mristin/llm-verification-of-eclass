@@ -4,15 +4,25 @@ Experiment 5: Analyze name-definition tuple pairs using Llama 3.1 via Ollama.
 This module helps to identify inconsistencies in definitions by comparing tuple pairs.
 """
 
+import argparse
+import csv
+import logging
 import os
+import re
 import socket
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import icontract
 
 from openai import OpenAI
+
+# Import LoggerFactory from the common module
+import sys
+sys.path.append(str(Path(__file__).parent.parent))
+from llm_verification_of_eclass.common.logger import LoggerFactory
 
 
 @dataclass
@@ -248,28 +258,16 @@ def _parse_fix_section(diagnosis: str) -> List[str]:
     return terms_to_fix
 
 
-def generate_iso_definition(client: LLMClient, term_name: str) -> str:
+def generate_iso_definition(client: LLMClient, term_name: str, system_prompt: str, user_prompt_template: str) -> str:
     """Generate an ISO 704:2022 compliant definition for a term.
 
     :param client: LLM client to use for generation
     :param term_name: The name of the term to define
+    :param system_prompt: System instruction for the LLM
+    :param user_prompt_template: User prompt template with {term_name} placeholder
     :return: Generated definition text
     """
-    system_prompt = """You are a strict Terminologist. 
-Your sole purpose is to generate a single, formal definition for a provided Term Name that complies with ISO 704:2022 standards.
-
-### Rules
-1. **Format:** Output ONLY the definition text. Do not output the name, labels, or explanation.
-2. **Structure:** Use the intensional definition structure: [Genus/Superordinate Concept] + [Differentia/Distinguishing Characteristics].
-3. **Constraints:**
-   - No circularity (do not use the term itself).
-   - No encyclopedic info or examples.
-   - Must be a single, complete sentence."""
-
-    user_prompt = f"""Term Name: {term_name}
-
-Write the ISO 704:2022 definition now."""
-
+    user_prompt = user_prompt_template.format(term_name=term_name)
     definition = client.create_completion(system_prompt, user_prompt)
     return definition.strip()
 
@@ -281,6 +279,9 @@ def remediate_definitions(
     name_2: str,
     def_2: str,
     audit_response: str,
+    iso_system_prompt: str,
+    iso_user_prompt_template: str,
+    logger: logging.Logger,
 ) -> Dict[str, str]:
     """Generate improved definitions based on identified issues.
 
@@ -290,6 +291,9 @@ def remediate_definitions(
     :param name_2: Second name
     :param def_2: Second definition
     :param audit_response: The complete audit diagnosis
+    :param iso_system_prompt: System prompt for ISO definition generation
+    :param iso_user_prompt_template: User prompt template for ISO definition generation
+    :param logger: Logger instance
     :return: Dictionary mapping 'A' and/or 'B' to new definitions
     """
     # Identify which definitions need fixing
@@ -309,14 +313,14 @@ def remediate_definitions(
             term_name = name_2
             term_label = "Definition B"
 
-        print(f"  Generating ISO 704 definition for '{term_name}'...")
+        logger.info(f"  Generating ISO 704 definition for '{term_name}'...")
 
         try:
-            new_def = generate_iso_definition(client, term_name)
+            new_def = generate_iso_definition(client, term_name, iso_system_prompt, iso_user_prompt_template)
             new_definitions[term] = new_def
-            print(f"---> {term_label}: {new_def}")
+            logger.info(f"---> {term_label}: {new_def}")
         except Exception as e:
-            print(f"---> Failed to generate {term_label}: {e}")
+            logger.error(f"---> Failed to generate {term_label}: {e}")
 
     return new_definitions
 
@@ -325,7 +329,11 @@ def analyze_tuple(
     client: LLMClient,
     tuple_data: List[str],
     tuple_id: int,
-    system_prompt: str,
+    audit_system_prompt: str,
+    audit_user_prompt_template: str,
+    iso_system_prompt: str,
+    iso_user_prompt_template: str,
+    logger: logging.Logger,
     enable_remediation: bool = True,
 ) -> Dict:
     """Analyze a single name-definition pair.
@@ -333,7 +341,11 @@ def analyze_tuple(
     :param client: LLM client to use for analysis
     :param tuple_data: List containing [name_1, def_1, name_2, def_2]
     :param tuple_id: Number of this tuple
-    :param system_prompt: System instruction for the LLM
+    :param audit_system_prompt: System instruction for audit LLM
+    :param audit_user_prompt_template: User prompt template for audit
+    :param iso_system_prompt: System prompt for ISO definition generation
+    :param iso_user_prompt_template: User prompt template for ISO definition generation
+    :param logger: Logger instance for logging
     :param enable_remediation: Whether to generate improved definitions
     :return: Dictionary with analysis results and proposed fixes
     :raise ValueError: If tuple_data does not contain exactly 4 elements
@@ -345,14 +357,233 @@ def analyze_tuple(
 
     name_1, def_1, name_2, def_2 = tuple_data
 
-    print(f"Tuple number {tuple_id} will be assessed:")
-    print(f"\tName 1: {name_1}")
-    print(f"\tDef 1: {def_1}")
-    print(f"\tName 2: {name_2}")
-    print(f"\tDef 2: {def_2}")
-    print()
+    logger.info(f"Tuple number {tuple_id} will be assessed:")
+    logger.info(f"\tName 1: {name_1}")
+    logger.info(f"\tDef 1: {def_1}")
+    logger.info(f"\tName 2: {name_2}")
+    logger.info(f"\tDef 2: {def_2}")
+    logger.info("")
 
-    user_prompt = f"""Input Data:
+    user_prompt = audit_user_prompt_template.format(
+        name_1=name_1, def_1=def_1, name_2=name_2, def_2=def_2
+    )
+
+    try:
+        audit_response = client.create_completion(audit_system_prompt, user_prompt)
+
+        result = {
+            "tuple_id": tuple_id,
+            "name_1": name_1,
+            "name_2": name_2,
+            "audit_response": audit_response,
+            "status": "success",
+        }
+
+        logger.info(result["audit_response"])
+        logger.info("\n" + "=" * 80 + "\n")
+
+        # region Remediation
+        if enable_remediation and _needs_remediation(audit_response):
+            logger.info("\n--- Remediation Part ---")
+
+            try:
+                new_definitions = remediate_definitions(
+                    client=client,
+                    name_1=name_1,
+                    def_1=def_1,
+                    name_2=name_2,
+                    def_2=def_2,
+                    audit_response=audit_response,
+                    iso_system_prompt=iso_system_prompt,
+                    iso_user_prompt_template=iso_user_prompt_template,
+                    logger=logger,
+                )
+
+                if new_definitions:
+                    logger.info("")
+                    result["proposed_definitions"] = new_definitions
+                else:
+                    logger.info("  No specific definitions identified for remediation.")
+                    result["proposed_definitions"] = {}
+
+            except Exception as e:
+                logger.error(f"  Remediation failed: {e}")
+                result["proposed_definitions"] = {}
+        else:
+            result["proposed_definitions"] = {}
+        # endregion
+
+        logger.info("\n" + "=" * 15 + "\n")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error processing tuple {tuple_id}: {e}")
+        return {
+            "tuple_id": tuple_id,
+            "name_1": name_1,
+            "name_2": name_2,
+            "audit_response": None,
+            "status": "error",
+            "error": str(e),
+            "proposed_definitions": {},
+        }
+
+
+def config_from_env() -> OllamaConfig:
+    """Create Ollama configuration from environment variables.
+
+    Environment Variables:
+    - LLM_MODEL: Model name (default: "llama3.1")
+    - OLLAMA_BASE_URL: Ollama base URL (default: "http://localhost:11434/v1")
+    - LLM_CONTEXT_WINDOW: Context window size (optional)
+
+    :return: Ollama configuration
+    """
+    model = os.getenv("LLM_MODEL", "llama3.1")
+    base_url = os.getenv("OLLAMA_BASE_URL")
+
+    context_window_str = os.getenv("LLM_CONTEXT_WINDOW")
+    context_window = int(context_window_str) if context_window_str else None
+
+    return OllamaConfig(
+        model=model, base_url=base_url, context_window=context_window
+    )
+
+
+def remove_id_from_preferred_name(preferred_name: str) -> str:
+    """Remove ID pattern (e.g., (0173-1#01-AGF076#008)) from preferred name.
+
+    Finds the last closing bracket, finds its matching opening bracket,
+    and removes that entire pattern from the end of the string.
+
+    :param preferred_name: The preferred name possibly with ID
+    :return: Clean preferred name without ID
+    """
+    # Find last closing bracket
+    last_close = preferred_name.rfind(')')
+    if last_close == -1:
+        return preferred_name.strip()
+
+    # Find matching opening bracket by counting backwards
+    bracket_count = 1
+    pos = last_close - 1
+    while pos >= 0 and bracket_count > 0:
+        if preferred_name[pos] == ')':
+            bracket_count += 1
+        elif preferred_name[pos] == '(':
+            bracket_count -= 1
+        pos -= 1
+
+    # pos+1 is now at the opening bracket
+    if bracket_count == 0:
+        return preferred_name[:pos+1].strip()
+
+    return preferred_name.strip()
+
+
+def extract_verdict(audit_response: str) -> str:
+    """Extract the verdict from the audit response.
+
+    :param audit_response: The complete audit response text
+    :return: One of the 4 verdicts or "UNKNOWN" if not found
+    """
+    verdicts = ["VALID DISTINCTION", "DEFINITION INSUFFICIENT", "MISALIGNMENT", "TRUE REDUNDANCY"]
+
+    audit_upper = audit_response.upper()
+    for verdict in verdicts:
+        if verdict in audit_upper:
+            return verdict
+
+    return "UNKNOWN"
+
+
+def load_csv_data(csv_path: Path, logger: logging.Logger) -> List[Tuple[str, str, str, str, str]]:
+    """Load data from CSV file.
+
+    :param csv_path: Path to the CSV file
+    :param logger: Logger instance
+    :return: List of tuples (distance, preferred_names_a, text_a, preferred_names_b, text_b)
+    """
+    data = []
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            data.append((
+                row['distance'],
+                row['preferred_names_a'],
+                row['text_a'],
+                row['preferred_names_b'],
+                row['text_b']
+            ))
+
+    logger.info(f"Loaded {len(data)} rows from {csv_path}")
+    return data
+
+
+def save_results_to_csv(results: List[Dict], output_path: Path, logger: logging.Logger) -> None:
+    """Save analysis results to CSV file.
+
+    :param results: List of result dictionaries
+    :param output_path: Path to output CSV file
+    :param logger: Logger instance
+    """
+    if not results:
+        logger.warning("No results to save")
+        return
+
+    with open(output_path, 'w', encoding='utf-8', newline='') as f:
+        fieldnames = [
+            'distance', 'preferred_names_a', 'text_a', 'preferred_names_b', 'text_b',
+            'verdict', 'llm_definition_a', 'llm_definition_b'
+        ]
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for result in results:
+            writer.writerow(result)
+
+    logger.info(f"Saved {len(results)} results to {output_path}")
+
+
+def main() -> List[Dict]:
+    """Execute the main analysis workflow.
+
+    :return: List of analysis results for all tuples
+    """
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Analyze definition tuples using LLM")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["test", "real"],
+        required=True,
+        help="Mode to run: 'test' for test samples, 'real' for CSV data"
+    )
+    args = parser.parse_args()
+
+    # Create experiment-5 directory if it doesn't exist
+    script_dir = Path(__file__).parent
+    experiment_dir = script_dir / "experiment-5"
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+
+    # Setup logger with timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_filename = experiment_dir / f"{timestamp}_experiment.log"
+
+    logger = LoggerFactory.get_logger(__name__)
+    file_handler = logging.FileHandler(log_filename, mode="w", encoding="utf-8")
+    file_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    # Define all prompts
+    audit_system_prompt = """You are a precise Terminologist and Data Quality Auditor. 
+Your goal is NOT to decide if concepts should be merged, but to diagnose if the definitions accurately distinguish the provided Preferred Names. 
+You must be concise (max 1-2 sentences per point) and objective."""
+
+    audit_user_prompt_template = """Input Data:
 Tuple A:
 - Name: {name_1}
 - Definition: {def_1}
@@ -390,200 +621,223 @@ Output Format:
 - Fix: [Briefly state what needs to change (e.g., "Sharpen Def A to specify X," or "None needed")]
 """
 
-    try:
-        audit_response = client.create_completion(system_prompt, user_prompt)
+    iso_system_prompt = """You are a strict Terminologist. 
+Your sole purpose is to generate a single, formal definition for a provided Term Name that complies with ISO 704:2022 standards.
 
-        result = {
-            "tuple_id": tuple_id,
-            "name_1": name_1,
-            "name_2": name_2,
-            "audit_response": audit_response,
-            "status": "success",
-        }
+### Rules
+1. **Format:** Output ONLY the definition text. Do not output the name, labels, or explanation.
+2. **Structure:** Use the intensional definition structure: [Genus/Superordinate Concept] + [Differentia/Distinguishing Characteristics].
+3. **Constraints:**
+   - No circularity (do not use the term itself).
+   - No encyclopedic info or examples.
+   - Must be a single, complete sentence."""
 
-        print(result["audit_response"])
-        print("\n" + "=" * 80 + "\n")
+    iso_user_prompt_template = """Term Name: {term_name}
 
-        # region Remediation
-        if enable_remediation and _needs_remediation(audit_response):
-            print("\n--- Remediation Part ---")
+Write the ISO 704:2022 definition now."""
 
-            try:
-                new_definitions = remediate_definitions(
-                    client=client,
-                    name_1=name_1,
-                    def_1=def_1,
-                    name_2=name_2,
-                    def_2=def_2,
-                    audit_response=audit_response,
-                )
+    # Log all prompts at the top of the log file
+    logger.info("="*80)
+    logger.info("PROMPTS USED IN THIS RUN")
+    logger.info("="*80)
+    logger.info("\n--- AUDIT SYSTEM PROMPT ---")
+    logger.info(audit_system_prompt)
+    logger.info("\n--- AUDIT USER PROMPT TEMPLATE ---")
+    logger.info(audit_user_prompt_template)
+    logger.info("\n--- ISO SYSTEM PROMPT ---")
+    logger.info(iso_system_prompt)
+    logger.info("\n--- ISO USER PROMPT TEMPLATE ---")
+    logger.info(iso_user_prompt_template)
+    logger.info("="*80)
+    logger.info("\n")
 
-                if new_definitions:
-                    print()
-                    result["proposed_definitions"] = new_definitions
-                else:
-                    print("  No specific definitions identified for remediation.")
-                    result["proposed_definitions"] = {}
-
-            except Exception as e:
-                print(f"  Remediation failed: {e}")
-                result["proposed_definitions"] = {}
-        else:
-            result["proposed_definitions"] = {}
-        # endregion
-
-        print("\n" + "=" * 15 + "\n")
-
-        return result
-
-    except Exception as e:
-        print(f"Error processing tuple {tuple_id}: {e}")
-        return {
-            "tuple_id": tuple_id,
-            "name_1": name_1,
-            "name_2": name_2,
-            "audit_response": None,
-            "status": "error",
-            "error": str(e),
-            "proposed_definitions": {},
-        }
-
-
-def config_from_env() -> OllamaConfig:
-    """Create Ollama configuration from environment variables.
-
-    Environment Variables:
-    - LLM_MODEL: Model name (default: "llama3.1")
-    - OLLAMA_BASE_URL: Ollama base URL (default: "http://localhost:11434/v1")
-    - LLM_CONTEXT_WINDOW: Context window size (optional)
-
-    :return: Ollama configuration
-    """
-    model = os.getenv("LLM_MODEL", "llama3.1")
-    base_url = os.getenv("OLLAMA_BASE_URL")
-
-    context_window_str = os.getenv("LLM_CONTEXT_WINDOW")
-    context_window = int(context_window_str) if context_window_str else None
-
-    return OllamaConfig(
-        model=model, base_url=base_url, context_window=context_window
-    )
-
-
-def main() -> List[Dict]:
-    """Execute the main analysis workflow.
-
-    :return: List of analysis results for all tuples
-    """
     # region Configuration
     config = config_from_env()
 
-    print("Using Ollama")
-    print(f"Model: {config.model}\n")
+    logger.info("Using Ollama")
+    logger.info(f"Model: {config.model}")
+    logger.info(f"Mode: {args.mode}\n")
     # endregion
 
     # region Client init
     try:
         client = OllamaClient(config)
     except Exception as e:
-        print(f"Failed to initialize Ollama client: {e}")
-        print("\nMake sure:")
-        print("1. Ollama is running: ollama serve")
-        print(f"2. Model is pulled: ollama pull {config.model}")
+        logger.error(f"Failed to initialize Ollama client: {e}")
+        logger.error("\nMake sure:")
+        logger.error("1. Ollama is running: ollama serve")
+        logger.error(f"2. Model is pulled: ollama pull {config.model}")
         return []
     # endregion
 
-    # region Test samples
-    test_samples = [
-        [
-            "Push button panel door communication",
-            "electrical device for activating an audible signal device to the call, which is attached on a string",
-            "Hospital bell",
-            "electrical device for activating an audible signal device to the call, which is attached to a string",
-        ],
-        [
-            "Concealer stick (makeup)",
-            "Concealer - as stick - is a type of cosmetic that is used to mask dark circles, age spots, large pores, and other small blemishes visible on the skin",
-            "Concealer (BB cream)",
-            "Concealer is a type of cosmetic that is used to mask dark circles, age spots, large pores, and other small blemishes visible on the skin",
-        ],
-        [
-            "Bend cover for cable support system",
-            "Preform which is mounted on the angular extension of a cable support system for the protection of laid cables against dust, dirt and liquids and outdoors against rain and sun",
-            "Cover for corner add-on piece for cable support system",
-            "Preform which is mounted on the angular extension of a cable support system for the protection of the laid cables against dust, dirt and liquids, and outdoors against rain and sun",
-        ],
-        [
-            "Electro hydraulic actuator, self contained actuator (hydraulics)",
-            "actuator that provides linear motion, with control unit, with or without motor-pump unit",
-            "Cylinder, electro hydraulic actuator, self contained actuator (hydraulics)",
-            "actuator that provides linear motion, with or without control unit, with or without motor-pump unit",
-        ],
-        [
-            "Key board",
-            "Key board is a storage place for keys. In public buildings, but also in apartment buildings, such a lockable box is often placed in front of or next to doors",
-            "Key board, key box (living, not specified)",
-            "Key board or box is a storage place for keys. In public buildings, but also in apartment buildings, such a lockable box is often placed in front of or next to doors",
-        ],
-        [
-            "Safety-related shut-down mat (tactile sensor)",
-            "Safety-related shut-down mats are often used to secure danger zones on punching systems, pipe bending machines and woodworking machines. Complete work areas are monitored",
-            "Shut-down mat (tactile sensor)",
-            "Shut-down mats are often used to secure danger zones on punching systems, pipe bending machines and woodworking machines. Complete work areas are monitored",
-        ],
-        [
-            "Network Hub (general application)",
-            "working exclusively on level 1 of the OSI reference model node in the network technology , which forwards the bits/symbols to all connected network participants",
-            "Repeater Hub (wired, industrial application)",
-            "working exclusively on level 1 of the OSI reference model node in the network technology, which forwards the bits/symbols to all connected network participants",
-        ],
-        [
-            "Coffee cup",
-            "item specially designed for coffee enjoyment",
-            "Coffee mug",
-            "item specially designed for the enjoyment of coffee",
-        ],
-        [
-            "ECG/respiration cable (monitoring)",
-            "cable for transmitting electrical signals of the heart and respiration from the patient to the monitoring system",
-            "ECG leadwire set (monitoring)",
-            "cable for transmitting electrical signals of the heart and respiration or other vital parameters from the patient to the monitoring system",
-        ],
-        [
-            "Electrically operated valve (pneumatics)",
-            "valve that opens or blocks one or more current paths (flow paths) with electrical actuation and non-standardized connection surface",
-            "Standard valve electrically operated (pneumatics)",
-            "valve that opens or blocks one or more current paths (flow paths) with electrical actuation and standardized connection area",
-        ],
-    ]
+    # region Data loading
+    if args.mode == "test":
+        # region Test samples
+        test_samples = [
+            [
+                "Push button panel door communication",
+                "electrical device for activating an audible signal device to the call, which is attached on a string",
+                "Hospital bell",
+                "electrical device for activating an audible signal device to the call, which is attached to a string",
+            ],
+            [
+                "Concealer stick (makeup)",
+                "Concealer - as stick - is a type of cosmetic that is used to mask dark circles, age spots, large pores, and other small blemishes visible on the skin",
+                "Concealer (BB cream)",
+                "Concealer is a type of cosmetic that is used to mask dark circles, age spots, large pores, and other small blemishes visible on the skin",
+            ],
+            [
+                "Bend cover for cable support system",
+                "Preform which is mounted on the angular extension of a cable support system for the protection of laid cables against dust, dirt and liquids and outdoors against rain and sun",
+                "Cover for corner add-on piece for cable support system",
+                "Preform which is mounted on the angular extension of a cable support system for the protection of the laid cables against dust, dirt and liquids, and outdoors against rain and sun",
+            ],
+            [
+                "Electro hydraulic actuator, self contained actuator (hydraulics)",
+                "actuator that provides linear motion, with control unit, with or without motor-pump unit",
+                "Cylinder, electro hydraulic actuator, self contained actuator (hydraulics)",
+                "actuator that provides linear motion, with or without control unit, with or without motor-pump unit",
+            ],
+            [
+                "Key board",
+                "Key board is a storage place for keys. In public buildings, but also in apartment buildings, such a lockable box is often placed in front of or next to doors",
+                "Key board, key box (living, not specified)",
+                "Key board or box is a storage place for keys. In public buildings, but also in apartment buildings, such a lockable box is often placed in front of or next to doors",
+            ],
+            [
+                "Safety-related shut-down mat (tactile sensor)",
+                "Safety-related shut-down mats are often used to secure danger zones on punching systems, pipe bending machines and woodworking machines. Complete work areas are monitored",
+                "Shut-down mat (tactile sensor)",
+                "Shut-down mats are often used to secure danger zones on punching systems, pipe bending machines and woodworking machines. Complete work areas are monitored",
+            ],
+            [
+                "Network Hub (general application)",
+                "working exclusively on level 1 of the OSI reference model node in the network technology , which forwards the bits/symbols to all connected network participants",
+                "Repeater Hub (wired, industrial application)",
+                "working exclusively on level 1 of the OSI reference model node in the network technology, which forwards the bits/symbols to all connected network participants",
+            ],
+            [
+                "Coffee cup",
+                "item specially designed for coffee enjoyment",
+                "Coffee mug",
+                "item specially designed for the enjoyment of coffee",
+            ],
+            [
+                "ECG/respiration cable (monitoring)",
+                "cable for transmitting electrical signals of the heart and respiration from the patient to the monitoring system",
+                "ECG leadwire set (monitoring)",
+                "cable for transmitting electrical signals of the heart and respiration or other vital parameters from the patient to the monitoring system",
+            ],
+            [
+                "Electrically operated valve (pneumatics)",
+                "valve that opens or blocks one or more current paths (flow paths) with electrical actuation and non-standardized connection surface",
+                "Standard valve electrically operated (pneumatics)",
+                "valve that opens or blocks one or more current paths (flow paths) with electrical actuation and standardized connection area",
+            ],
+        ]
+        # endregion
+
+        # Process test samples
+        results: List[Dict] = []
+        for i, sample in enumerate(test_samples):
+            result = analyze_tuple(
+                client, sample, i,
+                audit_system_prompt, audit_user_prompt_template,
+                iso_system_prompt, iso_user_prompt_template,
+                logger
+            )
+            results.append(result)
+
+    else:  # real mode
+        # Load data from CSV files
+        data_dir = script_dir.parent / "data"
+        csv_files = [
+            data_dir / "4-experiment" / "classes-similarity-threshold" / "similarity_matches_thresh_0.03.csv",
+            data_dir / "4-experiment" / "properties-similarity-threshold" / "similarity_matches_thresh_0.03.csv",
+        ]
+
+        all_csv_data = []
+        for csv_file in csv_files:
+            if csv_file.exists():
+                csv_data = load_csv_data(csv_file, logger)
+                all_csv_data.extend(csv_data)
+            else:
+                logger.warning(f"CSV file not found: {csv_file}")
+
+        logger.info(f"Total rows loaded: {len(all_csv_data)}")
+
+        # Process real data
+        results_for_csv = []
+        processed = 0
+        skipped = 0
+
+        for i, (distance, pref_name_a, text_a, pref_name_b, text_b) in enumerate(all_csv_data):
+            # Skip if either definition is chemical
+            if is_chemical_definition(text_a) or is_chemical_definition(text_b):
+                logger.info(f"Skipping row {i}: chemical definition detected")
+                skipped += 1
+                continue
+
+            # Remove IDs from preferred names for prompts
+            clean_name_a = remove_id_from_preferred_name(pref_name_a)
+            clean_name_b = remove_id_from_preferred_name(pref_name_b)
+
+            # Analyze tuple
+            tuple_data = [clean_name_a, text_a, clean_name_b, text_b]
+            result = analyze_tuple(
+                client, tuple_data, i,
+                audit_system_prompt, audit_user_prompt_template,
+                iso_system_prompt, iso_user_prompt_template,
+                logger
+            )
+
+            # Extract verdict
+            verdict = extract_verdict(result.get("audit_response", ""))
+
+            # Get proposed definitions
+            proposed_defs = result.get("proposed_definitions", {})
+            llm_def_a = proposed_defs.get("A", "")
+            llm_def_b = proposed_defs.get("B", "")
+
+            # Create row for CSV (with original preferred names including IDs)
+            csv_row = {
+                "distance": distance,
+                "preferred_names_a": pref_name_a,
+                "text_a": text_a,
+                "preferred_names_b": pref_name_b,
+                "text_b": text_b,
+                "verdict": verdict,
+                "llm_definition_a": llm_def_a,
+                "llm_definition_b": llm_def_b,
+            }
+            results_for_csv.append(csv_row)
+            processed += 1
+
+        logger.info(f"\nProcessed: {processed} rows")
+        logger.info(f"Skipped (chemical): {skipped} rows")
+
+        # Save results to CSV
+        output_csv = data_dir / "5-experiment" / "llm_analysis.csv"
+        output_csv.parent.mkdir(parents=True, exist_ok=True)
+        save_results_to_csv(results_for_csv, output_csv, logger)
+
+        results = []  # Return empty for real mode as we save to CSV
     # endregion
 
-    # region System prompt
-    system_prompt = """You are a precise Terminologist and Data Quality Auditor. 
-Your goal is NOT to decide if concepts should be merged, but to diagnose if the definitions accurately distinguish the provided Preferred Names. 
-You must be concise (max 1-2 sentences per point) and objective."""
-    # endregion
+    # region Summary for test mode
+    if args.mode == "test":
+        successful = sum(1 for r in results if r["status"] == "success")
+        with_remediations = sum(
+            1
+            for r in results
+            if r["status"] == "success" and r.get("proposed_definitions")
+        )
 
-    # region Analysis execution
-    results: List[Dict] = []
-    for i, sample in enumerate(test_samples):
-        result = analyze_tuple(client, sample, i, system_prompt)
-        results.append(result)
-    # endregion
-
-    # region Summary
-    successful = sum(1 for r in results if r["status"] == "success")
-    with_remediations = sum(
-        1
-        for r in results
-        if r["status"] == "success" and r.get("proposed_definitions")
-    )
-
-    print(
-        f"\nProcessed {len(results)} tuples: {successful} successful, "
-        f"{len(results) - successful} errors"
-    )
-    print(f"New definitions proposed: {with_remediations}")
+        logger.info(
+            f"\nProcessed {len(results)} tuples: {successful} successful, "
+            f"{len(results) - successful} errors"
+        )
+        logger.info(f"New definitions proposed: {with_remediations}")
     # endregion
 
     return results
