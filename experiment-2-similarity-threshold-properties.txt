@@ -1,0 +1,5 @@
+2025-12-18 15:59:16,342 - INFO - Loading definition embeddings from: /Users/ablajabdimalinov/Documents/repos/llm-verification-of-eclass/data/extracted-properties/2-deduplicated-pair-properties/definition_embedding_map.pickle
+2025-12-18 15:59:16,412 - INFO - Loaded 21884 definition embeddings
+2025-12-18 15:59:16,412 - INFO - Loading preferred name embeddings from: /Users/ablajabdimalinov/Documents/repos/llm-verification-of-eclass/data/extracted-properties/2-deduplicated-pair-properties/preferred-name_embedding_map.pickle
+2025-12-18 15:59:16,492 - INFO - Loaded 23563 preferred name embeddings
+2025-12-18 15:59:16,492 - INFO - Loading eclass dictionary: ../../data/extracted-properties/2-deduplicated-pair-properties/eclass-0.csv

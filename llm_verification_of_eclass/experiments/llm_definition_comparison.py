@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import socket
+import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
@@ -20,7 +21,6 @@ import icontract
 from openai import OpenAI
 
 # Import LoggerFactory from the common module
-import sys
 sys.path.append(str(Path(__file__).parent.parent))
 from llm_verification_of_eclass.common.logger import LoggerFactory
 
@@ -195,17 +195,16 @@ def is_structural_definition(text_a: str, text_b: str) -> bool:
 def is_chemical_definition(text_a: str, text_b: str) -> bool:
     """
     Checks if any chemical keyword is present as a substring in text_a or text_b.
+    Returns True if at least one of the two texts is a chemical definition,
+    in which case the pair should be skipped entirely.
     The check is case-insensitive.
     """
-    # Convert inputs to lowercase to ensure 'Sodium' matches 'sodium'
     a_lower = text_a.lower() if text_a else ""
     b_lower = text_b.lower() if text_b else ""
 
-    # Check if any chemical keyword exists inside text_a
     if any(keyword in a_lower for keyword in CHEMICAL_COMPOUNDS):
         return True
 
-    # Check if any chemical keyword exists inside text_b
     if any(keyword in b_lower for keyword in CHEMICAL_COMPOUNDS):
         return True
 
@@ -222,9 +221,10 @@ class AuditSignals:
     :ivar alignment_b_justification: One-sentence justification for alignment_b
     :ivar names_distinct: Whether the two names are conceptually distinct
     :ivar names_distinct_justification: One-sentence justification for names_distinct
-    :ivar defs_explain_distinction: Whether the definitions explain the distinction
-                                    (None when names_distinct is False — prompt skipped)
-    :ivar defs_explain_distinction_justification: Justification, or None when skipped
+    :ivar defs_too_similar: Whether the definitions are too similar to explain the name distinction.
+                             True = problem found = DEFINITION INSUFFICIENT.
+                             None when names_distinct is False — prompt skipped.
+    :ivar defs_too_similar_justification: Justification, or None when skipped
     """
 
     alignment_a: bool
@@ -233,8 +233,8 @@ class AuditSignals:
     alignment_b_justification: str
     names_distinct: bool
     names_distinct_justification: str
-    defs_explain_distinction: Optional[bool]
-    defs_explain_distinction_justification: Optional[str]
+    defs_too_similar: Optional[bool]
+    defs_too_similar_justification: Optional[str]
 
 
 def _parse_yes_no_response(response: str) -> Tuple[bool, str]:
@@ -273,9 +273,11 @@ _NAMES_DISTINCT_SYSTEM_PROMPT = (
     "Format: YES/NO — [one sentence]"
 )
 
-_DEFS_EXPLAIN_SYSTEM_PROMPT = (
+_DEFS_TOO_SIMILAR_SYSTEM_PROMPT = (
     "You are a precise terminologist. "
     "Answer only YES or NO, then one sentence of justification. "
+    "Answer YES if the definitions are too similar to explain the difference between the names. "
+    "Answer NO if the definitions contain distinct wording that accounts for what makes the names different. "
     "Format: YES/NO — [one sentence]"
 )
 
@@ -317,13 +319,14 @@ def _check_names_distinct(client: LLMClient, name_1: str, name_2: str) -> Tuple[
     return _parse_yes_no_response(response)
 
 
-def _check_defs_explain_distinction(
+def _check_defs_too_similar(
     client: LLMClient,
     name_1: str, def_1: str,
     name_2: str, def_2: str,
 ) -> Tuple[bool, str]:
-    """Prompt 3 — ask whether definitions sufficiently explain the distinction between names.
+    """Prompt 3 — ask whether definitions are too similar to explain the distinction between names.
 
+    Framed as problem detection (YES = problem exists) rather than confirmation.
     Only called when names are already confirmed distinct.
 
     :param client: LLM client
@@ -331,18 +334,20 @@ def _check_defs_explain_distinction(
     :param def_1: First definition
     :param name_2: Second preferred name
     :param def_2: Second definition
-    :return: Tuple of (explanation result, justification)
+    :return: Tuple of (defs_too_similar result, justification).
+             True means the definitions fail to distinguish — DEFINITION INSUFFICIENT.
     """
     user_prompt = (
-        "Do these two definitions sufficiently explain what distinguishes "
-        "the two concepts from each other?\n\n"
+        "Are these two definitions too similar to explain what distinguishes the two concepts?\n\n"
         f"Name A: {name_1}\n"
         f"Definition A: {def_1}\n\n"
         f"Name B: {name_2}\n"
         f"Definition B: {def_2}\n\n"
+        "Answer YES if the definitions are near-identical or lack wording that reflects the difference between the names.\n"
+        "Answer NO if the definitions contain distinct wording that accounts for what makes the names different.\n\n"
         "Answer format: YES/NO — [one sentence]"
     )
-    response = client.create_completion(_DEFS_EXPLAIN_SYSTEM_PROMPT, user_prompt)
+    response = client.create_completion(_DEFS_TOO_SIMILAR_SYSTEM_PROMPT, user_prompt)
     return _parse_yes_no_response(response)
 
 
@@ -374,12 +379,12 @@ def run_audit_prompts(
     logger.info(f"  [Prompt 2]  Names distinct: {'YES' if names_distinct else 'NO'} — {just_names}")
 
     if names_distinct:
-        defs_explain, just_defs = _check_defs_explain_distinction(
+        defs_too_similar, just_defs = _check_defs_too_similar(
             client, name_1, def_1, name_2, def_2
         )
-        logger.info(f"  [Prompt 3]  Defs explain distinction: {'YES' if defs_explain else 'NO'} — {just_defs}")
+        logger.info(f"  [Prompt 3]  Defs too similar: {'YES' if defs_too_similar else 'NO'} — {just_defs}")
     else:
-        defs_explain = None
+        defs_too_similar = None
         just_defs = None
         logger.info("  [Prompt 3]  Skipped (names not distinct)")
 
@@ -390,8 +395,8 @@ def run_audit_prompts(
         alignment_b_justification=just_b,
         names_distinct=names_distinct,
         names_distinct_justification=just_names,
-        defs_explain_distinction=defs_explain,
-        defs_explain_distinction_justification=just_defs,
+        defs_too_similar=defs_too_similar,
+        defs_too_similar_justification=just_defs,
     )
 
 
@@ -399,10 +404,13 @@ def compute_verdict(signals: AuditSignals) -> str:
     """Derive a deterministic verdict from the three audit signals.
 
     Decision table:
-    - Any alignment fails                      → MISALIGNMENT
-    - Both align, names not distinct           → TRUE REDUNDANCY
-    - Both align, names distinct, defs weak    → DEFINITION INSUFFICIENT
-    - Both align, names distinct, defs strong  → VALID DISTINCTION
+    - Any alignment fails                       → MISALIGNMENT
+    - Both align, names not distinct            → TRUE REDUNDANCY
+    - Both align, names distinct, defs similar  → DEFINITION INSUFFICIENT
+    - Both align, names distinct, defs distinct → VALID DISTINCTION
+
+    Note: defs_too_similar uses problem-detection polarity —
+    True means the definitions fail to distinguish (DEFINITION INSUFFICIENT).
 
     :param signals: Populated AuditSignals instance
     :return: One of the four verdict strings
@@ -411,7 +419,7 @@ def compute_verdict(signals: AuditSignals) -> str:
         return "MISALIGNMENT"
     if not signals.names_distinct:
         return "TRUE REDUNDANCY"
-    if not signals.defs_explain_distinction:
+    if signals.defs_too_similar:
         return "DEFINITION INSUFFICIENT"
     return "VALID DISTINCTION"
 
@@ -687,6 +695,7 @@ def load_csv_data(csv_path: Path, logger: logging.Logger) -> List[Tuple[str, str
     :return: List of tuples (distance, preferred_names_a, text_a, preferred_names_b, text_b)
     """
     data = []
+    csv.field_size_limit(sys.maxsize)
     with open(csv_path, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -761,7 +770,7 @@ def main() -> List[Dict]:
 
     # Define all prompts
     # Audit prompts are module-level constants (_ALIGNMENT_SYSTEM_PROMPT,
-    # _NAMES_DISTINCT_SYSTEM_PROMPT, _DEFS_EXPLAIN_SYSTEM_PROMPT) used directly
+    # _NAMES_DISTINCT_SYSTEM_PROMPT, _DEFS_TOO_SIMILAR_SYSTEM_PROMPT) used directly
     # by run_audit_prompts(). Only the ISO remediation prompts are passed around.
 
     iso_system_prompt = """You are a strict Terminologist. 
@@ -787,8 +796,8 @@ Write the ISO 704:2022 definition now."""
     logger.info(_ALIGNMENT_SYSTEM_PROMPT)
     logger.info("\n--- AUDIT PROMPT 2 (name distinctiveness) ---")
     logger.info(_NAMES_DISTINCT_SYSTEM_PROMPT)
-    logger.info("\n--- AUDIT PROMPT 3 (definition distinction, conditional) ---")
-    logger.info(_DEFS_EXPLAIN_SYSTEM_PROMPT)
+    logger.info("\n--- AUDIT PROMPT 3 (definition similarity, conditional) ---")
+    logger.info(_DEFS_TOO_SIMILAR_SYSTEM_PROMPT)
     logger.info("\n--- ISO SYSTEM PROMPT ---")
     logger.info(iso_system_prompt)
     logger.info("\n--- ISO USER PROMPT TEMPLATE ---")
@@ -894,7 +903,7 @@ Write the ISO 704:2022 definition now."""
 
     else:  # real mode
         # Load data from CSV files
-        data_dir = script_dir.parent / "data"
+        data_dir = script_dir.parent.parent / "data"
         csv_files = [
             data_dir / "4-experiment" / "classes-similarity-threshold" / "similarity_matches_thresh_0.03.csv",
             data_dir / "4-experiment" / "properties-similarity-threshold" / "similarity_matches_thresh_0.03.csv",
@@ -917,7 +926,7 @@ Write the ISO 704:2022 definition now."""
 
         for i, (distance, pref_name_a, text_a, pref_name_b, text_b) in enumerate(all_csv_data):
             # Skip if either definition is chemical
-            if is_chemical_definition(text_a) or is_chemical_definition(text_b):
+            if is_chemical_definition(text_a, text_b):
                 logger.info(f"Skipping row {i}: chemical definition detected")
                 skipped += 1
                 continue
