@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Final
 import icontract
 
 from openai import OpenAI
@@ -136,7 +136,7 @@ class OllamaClient(LLMClient):
         return response.choices[0].message.content
 
 
-STRUCTURAL_DEFINITIONS = {
+STRUCTURAL_DEFINITIONS: Final[frozenset] = frozenset({
     "Sub-group (4th level) for objects that cannot be classified into other specified sub-groups in the existing structure, but that are classified to their parent-class on the 3rd level",
     "Group (3rd level) for objects that cannot be classified into other specified groups in the existing structure, but that are classified to their parent-class on the 2nd level. A xx-xx-90-00-class cannot have any other sub-groups besides the generic xx-xx-90-90-class (…(Other, unspecified)) to be generally valid within the parent class on the 2nd level",
     "sub-group (4th level) for objects that cannot be classified into other specified sub-groups in the existing structure, but that are classified to their parent-class on the 3rd level",
@@ -165,20 +165,22 @@ STRUCTURAL_DEFINITIONS = {
     "Group (3rd level) for objects that cannot be classified into other specified groups in the existing structure, but that are classified to their parent-class on the 2nd level. A xx-xx-90-00-class cannot have any other sub-groups besides the generic xx-xx-90-90-class (â€¦(Other, unspecified)) to be generally valid within the parent class on the 2nd level",
     "sub-group (4th level) for objects with spare part characteristics that maintain or re-store the original condition of the objects classified under the parent-class on the 3rd level",
     "Subgroup (4th level) for objects with spare part characteristics that maintain or restore the original condition of the objects classified under the parent-class on the 3rd level"
-}
+})
 
-CHEMICAL_COMPOUNDS = [
-    "benz", "phenyl", "sulfon", "sulfonate", "sulfate", "sulfide", "sulfite", "sulfonyl", "nitro", "nitrate", "amino",
-    "imino", "carbox", "carbonyl", "aminocarbonyl", "carboxyl", "carboxylate", "amide", "amidate", "acetate",
-    "propionate", "butyrate", "oxalate", "lactate", "phosphate", "hydroxide", "oxide", "peroxide", "cyano", "oxo",
-    "azo", "triazine", "pyridine", "pyrimidine", "imidazole", "quinazoline", "indole", "naphth", "anthrac", "vinyl",
-    "vinylen", "ethyl", "propyl", "butyl", "methyl", "hydroxy", "methoxy", "phenoxy", "benzoyl", "benzyl", "ylidene",
-    "ylide", "yl", "anilino", "naphthyl", "anthryl", "chloro", "bromo", "fluoro", "dichloro", "trichloro", "chloride",
-    "chlorophenyl", "dichlorophenyl", "trifluoromethyl", "sodium", "potassium", "ammonium", "lithium", "magnesium",
-    "salts", "hepta", "hexa", "penta", "tetra", "tri", "di", "mono", "bis", "tris", "aluminium", "paraffins",
-    "phosphating", "acrylates", "hexafluoride", "arenes", "polymethyl", "maltene", "sulfate", "sulphooxy",
+CHEMICAL_COMPOUNDS: Final[frozenset] = frozenset([
+    "benz", "phenyl", "sulfon", "sulfonate", "sulfate", "sulfide", "sulfite", "sulfonyl",
+    "nitro", "nitrate", "amino", "imino", "carbox", "carbonyl", "aminocarbonyl", "carboxyl",
+    "carboxylate", "amide", "amidate", "acetate", "propionate", "butyrate", "oxalate", "lactate",
+    "phosphate", "hydroxide", "oxide", "peroxide", "cyano", "oxo", "azo", "triazine", "pyridine",
+    "pyrimidine", "imidazole", "quinazoline", "indole", "naphth", "anthrac", "vinyl", "vinylen",
+    "ethyl", "propyl", "butyl", "methyl", "hydroxy", "methoxy", "phenoxy", "benzoyl", "benzyl",
+    "ylidene", "ylide", "yl", "anilino", "naphthyl", "anthryl", "chloro", "bromo", "fluoro",
+    "dichloro", "trichloro", "chloride", "chlorophenyl", "dichlorophenyl", "trifluoromethyl",
+    "sodium", "potassium", "ammonium", "lithium", "magnesium", "salts", "hepta", "hexa", "penta",
+    "tetra", "tri", "di", "mono", "bis", "tris", "aluminium", "paraffins", "phosphating",
+    "acrylates", "hexafluoride", "arenes", "polymethyl", "maltene", "sulfate", "sulphooxy",
     "terephthalat", "phosphonat", "sulphate", "polyolefin", "onhydrochlorid"
-]
+])
 
 
 def is_structural_definition(text_a: str, text_b: str) -> bool:
@@ -261,23 +263,23 @@ def _parse_yes_no_response(response: str) -> Tuple[bool, str]:
     return answer, justification
 
 
-_ALIGNMENT_SYSTEM_PROMPT = (
+_ALIGNMENT_SYSTEM_PROMPT: Final[str] = (
     "You are a precise terminologist. "
     "Answer only YES or NO, then one sentence of justification. "
     "Format: YES/NO — [one sentence]"
 )
 
-_NAMES_DISTINCT_SYSTEM_PROMPT = (
+_NAMES_DISTINCT_SYSTEM_PROMPT: Final[str] = (
     "You are a precise terminologist. "
     "Answer only YES or NO, then one sentence of justification. "
     "Format: YES/NO — [one sentence]"
 )
 
-_DEFS_TOO_SIMILAR_SYSTEM_PROMPT = (
+_DEFS_TOO_SIMILAR_SYSTEM_PROMPT: Final[str] = (
     "You are a precise terminologist. "
     "Answer only YES or NO, then one sentence of justification. "
-    "Answer YES if the definitions are too similar to explain the difference between the names. "
-    "Answer NO if the definitions contain distinct wording that accounts for what makes the names different. "
+    "Answer YES if the definitions are nearly identical or refer to the exact same thing with only minor wording differences. "
+    "Answer NO if the definitions clearly describe different objects, even if they share some abstract category. "
     "Format: YES/NO — [one sentence]"
 )
 
@@ -320,9 +322,9 @@ def _check_names_distinct(client: LLMClient, name_1: str, name_2: str) -> Tuple[
 
 
 def _check_defs_too_similar(
-    client: LLMClient,
-    name_1: str, def_1: str,
-    name_2: str, def_2: str,
+        client: LLMClient,
+        name_1: str, def_1: str,
+        name_2: str, def_2: str,
 ) -> Tuple[bool, str]:
     """Prompt 3 — ask whether definitions are too similar to explain the distinction between names.
 
@@ -338,13 +340,13 @@ def _check_defs_too_similar(
              True means the definitions fail to distinguish — DEFINITION INSUFFICIENT.
     """
     user_prompt = (
-        "Are these two definitions too similar to explain what distinguishes the two concepts?\n\n"
+        "Are these two definitions nearly identical or describing the exact same thing?\n\n"
         f"Name A: {name_1}\n"
         f"Definition A: {def_1}\n\n"
         f"Name B: {name_2}\n"
         f"Definition B: {def_2}\n\n"
-        "Answer YES if the definitions are near-identical or lack wording that reflects the difference between the names.\n"
-        "Answer NO if the definitions contain distinct wording that accounts for what makes the names different.\n\n"
+        "Answer YES only if the definitions are describing the SAME specific thing with minor wording differences.\n"
+        "Answer NO if the definitions clearly describe different objects with distinct functions, regardless of any broad similarities.\n\n"
         "Answer format: YES/NO — [one sentence]"
     )
     response = client.create_completion(_DEFS_TOO_SIMILAR_SYSTEM_PROMPT, user_prompt)
@@ -352,10 +354,10 @@ def _check_defs_too_similar(
 
 
 def run_audit_prompts(
-    client: LLMClient,
-    name_1: str, def_1: str,
-    name_2: str, def_2: str,
-    logger: logging.Logger,
+        client: LLMClient,
+        name_1: str, def_1: str,
+        name_2: str, def_2: str,
+        logger: logging.Logger,
 ) -> AuditSignals:
     """Run all three focused audit prompts and return structured signals.
 
@@ -460,15 +462,15 @@ def generate_iso_definition(client: LLMClient, term_name: str, system_prompt: st
 
 
 def remediate_definitions(
-    client: LLMClient,
-    name_1: str,
-    def_1: str,
-    name_2: str,
-    def_2: str,
-    signals: AuditSignals,
-    iso_system_prompt: str,
-    iso_user_prompt_template: str,
-    logger: logging.Logger,
+        client: LLMClient,
+        name_1: str,
+        def_1: str,
+        name_2: str,
+        def_2: str,
+        signals: AuditSignals,
+        iso_system_prompt: str,
+        iso_user_prompt_template: str,
+        logger: logging.Logger,
 ) -> Dict[str, str]:
     """Generate improved definitions based on identified issues.
 
@@ -513,13 +515,13 @@ def remediate_definitions(
 
 
 def analyze_tuple(
-    client: LLMClient,
-    tuple_data: List[str],
-    tuple_id: int,
-    iso_system_prompt: str,
-    iso_user_prompt_template: str,
-    logger: logging.Logger,
-    enable_remediation: bool = True,
+        client: LLMClient,
+        tuple_data: List[str],
+        tuple_id: int,
+        iso_system_prompt: str,
+        iso_user_prompt_template: str,
+        logger: logging.Logger,
+        enable_remediation: bool = True,
 ) -> Dict:
     """Analyze a single name-definition pair using three focused audit prompts.
 
@@ -662,7 +664,7 @@ def remove_id_from_preferred_name(preferred_name: str) -> str:
 
     # pos+1 is now at the opening bracket
     if bracket_count == 0:
-        return preferred_name[:pos+1].strip()
+        return preferred_name[:pos + 1].strip()
 
     return preferred_name.strip()
 
@@ -746,9 +748,12 @@ def main() -> List[Dict]:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["test", "real"],
+        choices=["test", "test-unrelated-cross-domain", "test-unrelated-same-domain", "real"],
         required=True,
-        help="Mode to run: 'test' for test samples, 'real' for CSV data"
+        help="Mode to run: 'test' for original test samples, "
+             "'test-unrelated-cross-domain' for completely unrelated concepts from different domains, "
+             "'test-unrelated-same-domain' for unrelated concepts from same ECLASS domain, "
+             "'real' for CSV data"
     )
     args = parser.parse_args()
 
@@ -789,9 +794,9 @@ Your sole purpose is to generate a single, formal definition for a provided Term
 Write the ISO 704:2022 definition now."""
 
     # Log all prompts at the top of the log file
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info("PROMPTS USED IN THIS RUN")
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info("\n--- AUDIT PROMPT 1 (alignment, run once per name/def pair) ---")
     logger.info(_ALIGNMENT_SYSTEM_PROMPT)
     logger.info("\n--- AUDIT PROMPT 2 (name distinctiveness) ---")
@@ -802,7 +807,7 @@ Write the ISO 704:2022 definition now."""
     logger.info(iso_system_prompt)
     logger.info("\n--- ISO USER PROMPT TEMPLATE ---")
     logger.info(iso_user_prompt_template)
-    logger.info("="*80)
+    logger.info("=" * 80)
     logger.info("\n")
 
     # region Configuration
@@ -901,6 +906,102 @@ Write the ISO 704:2022 definition now."""
             )
             results.append(result)
 
+    elif args.mode == "test-unrelated-cross-domain":
+        # region Test samples - completely unrelated concepts from different ECLASS domains
+        # These should all be classified as VALID DISTINCTION (names distinct, definitions distinct)
+        logger.info("=== Testing unrelated concepts from different ECLASS domains ===\n")
+        test_samples_unrelated_cross = [
+            [
+                "Mobile soldering, welding device (maintenance)",
+                "Portable device that is used to join or repair metal parts by soldering or welding and can be used flexibly in different locations.",
+                "TV/DVD combination (plasma)",
+                "Combination of a television with plasma technology and a DVD player or DVD recorder",
+            ],
+            [
+                "TV/DVD combination (plasma)",
+                "Combination of a television with plasma technology and a DVD player or DVD recorder",
+                "Load safety net",
+                "Means of securing loads in road, rail, air and shipping traffic against the physical forces of movement occurring during transport",
+            ],
+            [
+                "Load safety net",
+                "Means of securing loads in road, rail, air and shipping traffic against the physical forces of movement occurring during transport",
+                "Tool for primary molding from plastic state",
+                "tool for producing a solid body through primary shaping from the plastic state according to classification number 1.2 of DIN 8580",
+            ],
+            [
+                "Tool for primary molding from plastic state",
+                "tool for producing a solid body through primary shaping from the plastic state according to classification number 1.2 of DIN 8580",
+                "Floor filler",
+                "An filling compound for the floor area is suitable for the following areas: production of a necessary, uniform absorbency of the substrate when using dispersion adhesives, Preparation of a water-resistant buffer layer when using dispersion adhesives, Producing a sufficient flatness of the substrate, For repairing the ground (filling holes, etc.), Filling of slanting to adjoining components, preparation of precipitation situations, etc., as well as the use as a thin screed with elaborate restoration measures",
+            ],
+            [
+                "Mobile soldering, welding device (maintenance)",
+                "Portable device that is used to join or repair metal parts by soldering or welding and can be used flexibly in different locations.",
+                "Floor filler",
+                "An filling compound for the floor area is suitable for the following areas: production of a necessary, uniform absorbency of the substrate when using dispersion adhesives, Preparation of a water-resistant buffer layer when using dispersion adhesives, Producing a sufficient flatness of the substrate, For repairing the ground (filling holes, etc.), Filling of slanting to adjoining components, preparation of precipitation situations, etc., as well as the use as a thin screed with elaborate restoration measures",
+            ],
+        ]
+        # endregion
+
+        # Process unrelated cross-domain test samples
+        results: List[Dict] = []
+        for i, sample in enumerate(test_samples_unrelated_cross):
+            result = analyze_tuple(
+                client, sample, i,
+                iso_system_prompt, iso_user_prompt_template,
+                logger
+            )
+            results.append(result)
+
+    elif args.mode == "test-unrelated-same-domain":
+        # region Test samples - unrelated concepts from same ECLASS domain (eclass 27)
+        # These should all be classified as VALID DISTINCTION (names distinct, definitions distinct)
+        logger.info("   Testing unrelated concepts from same ECLASS domain (27) ===\n")
+        test_samples_unrelated_same = [
+            [
+                "Servo cable / motor cable",
+                "Cable type used to connect motors and servomotors and a control unit, whose structure and materials are specially designed for these applications",
+                "Test plugs and modules (test equipment)",
+                "Auxiliary equipment as test plug, test module with different switching contacts, connecting cable, applications, etc",
+            ],
+            [
+                "Test plugs and modules (test equipment)",
+                "Auxiliary equipment as test plug, test module with different switching contacts, connecting cable, applications, etc",
+                "Connection component for cable floor system",
+                "Component for floor integration for connecting electrical equipment",
+            ],
+            [
+                "Connection component for cable floor system",
+                "Component for floor integration for connecting electrical equipment",
+                "Accessories flush mounted frame",
+                "Basic element for fixation on ground on which the bonnet mounted is",
+            ],
+            [
+                "Accessories flush mounted frame",
+                "Basic element for fixation on ground on which the bonnet mounted is",
+                "Signal post",
+                "Beacon, usually with several different color schemes, for visual signaling of states by means of lamps",
+            ],
+            [
+                "Servo cable / motor cable",
+                "Cable type used to connect motors and servomotors and a control unit, whose structure and materials are specially designed for these applications",
+                "Signal post",
+                "Beacon, usually with several different color schemes, for visual signaling of states by means of lamps",
+            ],
+        ]
+        # endregion
+
+        # Process unrelated same-domain test samples
+        results: List[Dict] = []
+        for i, sample in enumerate(test_samples_unrelated_same):
+            result = analyze_tuple(
+                client, sample, i,
+                iso_system_prompt, iso_user_prompt_template,
+                logger
+            )
+            results.append(result)
+
     else:  # real mode
         # Load data from CSV files
         data_dir = script_dir.parent.parent / "data"
@@ -976,8 +1077,8 @@ Write the ISO 704:2022 definition now."""
         results = []  # Return empty for real mode as we save to CSV
     # endregion
 
-    # region Summary for test mode
-    if args.mode == "test":
+    # region Summary for test modes
+    if args.mode in ("test", "test-unrelated-cross-domain", "test-unrelated-same-domain"):
         successful = sum(1 for r in results if r["status"] == "success")
         with_remediations = sum(
             1
@@ -990,6 +1091,35 @@ Write the ISO 704:2022 definition now."""
             f"{len(results) - successful} errors"
         )
         logger.info(f"New definitions proposed: {with_remediations}")
+
+        # Show verdict breakdown
+        verdict_counts = {}
+        for r in results:
+            if r["status"] == "success":
+                verdict = r.get("audit_response", "UNKNOWN")
+                verdict_counts[verdict] = verdict_counts.get(verdict, 0) + 1
+
+        logger.info("\nVerdict breakdown:")
+        for verdict, count in sorted(verdict_counts.items()):
+            logger.info(f"  {verdict}: {count}")
+
+        # For unrelated test modes, validate expected behavior
+        if args.mode in ("test-unrelated-cross-domain", "test-unrelated-same-domain"):
+            expected_verdict = "VALID DISTINCTION"
+            unexpected = [
+                (i, r.get("audit_response", "UNKNOWN"))
+                for i, r in enumerate(results)
+                if r["status"] == "success" and r.get("audit_response") != expected_verdict
+            ]
+
+            if unexpected:
+                logger.warning(
+                    f"\nWARNING: {len(unexpected)} tuples did NOT receive expected verdict '{expected_verdict}':"
+                )
+                for idx, verdict in unexpected:
+                    logger.warning(f"  Tuple {idx}: got '{verdict}'")
+            else:
+                logger.info(f"\n✓ All tuples correctly identified as '{expected_verdict}'")
     # endregion
 
     return results

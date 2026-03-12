@@ -57,24 +57,39 @@ NAMES_DISTINCT_USER_PROMPT = (
 
 # Audit Prompt 3: Definition Similarity (conditional)
 # Asked only when Prompt 2 returned YES (names are distinct).
-# YES = definitions fail to distinguish = DEFINITION INSUFFICIENT.
+# YES = definitions describe the same thing = DEFINITION INSUFFICIENT.
+# NO = definitions describe different things = VALID DISTINCTION.
+#
+# Evolution:
+#
+# v4.0: "Answer YES if definitions are too similar to explain the difference between names."
+#   Problem: Required explicit contrast. Failed on unrelated concepts (0/5 pass).
+#   Example: "soldering device" vs "TV/DVD" → DEFINITION INSUFFICIENT.
+#
+# v4.1: "Answer YES if both describe objects from the same semantic category."
+#   Problem: Found absurd categories ("both are devices"). Worse: 0/5 pass.
+#   Example: "soldering device" + "TV/DVD" → "both portable electronic devices".
+#
+# v4.2 (current): "Answer YES if definitions are nearly identical or the exact same thing."
+#   Improvement: Tests near-identity, not category. Ignores broad similarities.
+#   Result: 3/5 pass. Failures are legitimate (vague definitions).
 
 DEFS_TOO_SIMILAR_SYSTEM_PROMPT = (
     "You are a precise terminologist. "
     "Answer only YES or NO, then one sentence of justification. "
-    "Answer YES if the definitions are too similar to explain the difference between the names. "
-    "Answer NO if the definitions contain distinct wording that accounts for what makes the names different. "
+    "Answer YES if the definitions are nearly identical or refer to the exact same thing with only minor wording differences. "
+    "Answer NO if the definitions clearly describe different objects, even if they share some abstract category. "
     "Format: YES/NO — [one sentence]"
 )
 
 DEFS_TOO_SIMILAR_USER_PROMPT = (
-    "Are these two definitions too similar to explain what distinguishes the two concepts?\n\n"
+    "Are these two definitions nearly identical or describing the exact same thing?\n\n"
     "Name A: {name_1}\n"
     "Definition A: {def_1}\n\n"
     "Name B: {name_2}\n"
     "Definition B: {def_2}\n\n"
-    "Answer YES if the definitions are near-identical or lack wording that reflects the difference between the names.\n"
-    "Answer NO if the definitions contain distinct wording that accounts for what makes the names different.\n\n"
+    "Answer YES only if the definitions are describing the SAME specific thing with minor wording differences.\n"
+    "Answer NO if the definitions clearly describe different objects with distinct functions, regardless of any broad similarities.\n\n"
     "Answer format: YES/NO — [one sentence]"
 )
 
