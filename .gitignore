@@ -218,15 +218,21 @@ llm_verification_of_eclass/preprocessing/*.txt
 # Root-level text dumps (experiment outputs)
 experiment-2-similarity-threshold-properties.txt
 
-# Experiment outputs — CSVs, logs, analysis MDs (local only)
+# Experiment outputs — CSVs, logs (local only)
 llm_verification_of_eclass/experiments/**/*.csv
 llm_verification_of_eclass/experiments/**/*.log
 llm_verification_of_eclass/experiments/experiment-5/
 
-# Markdown analysis files in experiments (prompts/ subdir is kept)
-llm_verification_of_eclass/experiments/*.md
-llm_verification_of_eclass/experiments/experiment_sample_results.md
+# Markdown files — all excluded except README.md and the prompts changelog
+# (analysis files contain ECLASS data which must not be published)
+*.md
+!README.md
+!llm_verification_of_eclass/experiments/prompts/CHANGELOG.md
 
 # Unfinished experiments (not ready for review)
 llm_verification_of_eclass/experiments/connected_components_clustering.py
 llm_verification_of_eclass/experiments/minhash_lsh_duplicates.py
+
+# Local-only assessment tools (contain ECLASS data, not for sharing)
+llm_verification_of_eclass/experiments/definition_comparison.py
+llm_verification_of_eclass/experiments/human_assessment.py

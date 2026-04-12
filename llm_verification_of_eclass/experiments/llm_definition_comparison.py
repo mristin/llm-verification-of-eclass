@@ -1111,6 +1111,12 @@ def main() -> List[Dict]:
         default=None,
         help="Path to an existing combined ablation CSV to append new results to"
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Maximum number of tuples to process in 'real' mode (default: process all)"
+    )
     args = parser.parse_args()
 
     # Create experiment-5 directory if it doesn't exist
@@ -1241,8 +1247,8 @@ Write the ISO 704:2022 definition now."""
         # Load data from CSV files
         data_dir = script_dir.parent.parent / "data"
         csv_files = [
-            data_dir / "4-experiment" / "classes-similarity-threshold" / "similarity_matches_thresh_0.03.csv",
-            data_dir / "4-experiment" / "properties-similarity-threshold" / "similarity_matches_thresh_0.03.csv",
+            data_dir / "4-experiment" / "classes-similarity-threshold" / "similarity_matches_thresh_0.04735.csv",
+            data_dir / "4-experiment" / "properties-similarity-threshold" / "similarity_matches_thresh_0.04735.csv",
         ]
 
         all_csv_data = []
@@ -1306,6 +1312,10 @@ Write the ISO 704:2022 definition now."""
             }
             results_for_csv.append(csv_row)
             processed += 1
+
+            if args.limit is not None and processed >= args.limit:
+                logger.info(f"Reached limit of {args.limit} processed tuples — stopping.")
+                break
 
         logger.info(f"\nProcessed: {processed} rows")
         logger.info(f"Skipped (chemical or structural): {skipped} rows")

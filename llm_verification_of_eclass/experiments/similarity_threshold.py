@@ -279,9 +279,10 @@ def find_neighbors_batched(
 if __name__ == "__main__":
 
     # mode is either "classes" or "properties"
-    mode = "properties"
+    mode = "classes"
 
-    thresholds_to_check = [0.08763, 0.03, 0.01, 0.09639]
+    # from experiment 4a: Average Distance: 0.01079, Maximum Distance/Threshold: 0.04735, Threshold (+10%):   0.05208
+    thresholds_to_check = [0.04735, 0.03, 0.01, 0.05208]
 
     # only max threshold is used for function, rest are filtered from it
     max_threshold = max(thresholds_to_check)

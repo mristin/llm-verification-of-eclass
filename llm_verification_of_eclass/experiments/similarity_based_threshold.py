@@ -142,8 +142,8 @@ def create_distribution_plot(
     )
 
     # Customize plot
-    plt.xlabel("Cosine Similarity Range", fontsize=12)
-    plt.ylabel("Frequency", fontsize=12)
+    plt.xlabel("Cosine Similarity Range", fontsize=15)
+    plt.ylabel("Frequency", fontsize=15)
     plt.title(
         f"Distribution of Cosine Similarities: Preferred Name vs Definition ({mode.capitalize()})",
         fontsize=14,
@@ -162,7 +162,7 @@ def create_distribution_plot(
                 f"{int(height)}",
                 ha="center",
                 va="bottom",
-                fontsize=9,
+                fontsize=12,
             )
 
     # Add statistics
@@ -225,89 +225,77 @@ def create_stacked_distribution_plot(
 
         logger.info(f"\nNo placeholder definitions found for mode: {mode}")
 
-    # Bins for graph with range [0, 1] and step 0.1
+    # Bins for graph with range [0.3, 1] and step 0.1
     bins = np.arange(0, 1.1, 0.1)
-    bin_labels = [f"{bins[i]:.1f}-{bins[i + 1]:.1f}" for i in range(len(bins) - 1)]
+    all_bin_labels = [f"{bins[i]:.1f}-{bins[i + 1]:.1f}" for i in range(len(bins) - 1)]
 
-    # Calculate histograms
-    counts_ph, _ = np.histogram(sim_placeholders, bins=bins)
-    counts_reg, _ = np.histogram(sim_regular, bins=bins)
+    # Calculate histograms over full range, then slice from 0.3
+    counts_ph_full, _ = np.histogram(sim_placeholders, bins=bins)
+    counts_reg_full, _ = np.histogram(sim_regular, bins=bins)
 
-    # Create stacked bar chart
-    plt.figure(figsize=(12, 6))
+    start_idx = 3  # 0.3-0.4 and onwards
+    counts_ph = counts_ph_full[start_idx:]
+    counts_reg = counts_reg_full[start_idx:]
+    bin_labels = all_bin_labels[start_idx:]
 
-    # Placeholders are at the bottom
-    plt.bar(
-        range(len(bin_labels)),
-        counts_ph,
-        color="#E37222",
-        edgecolor="black",
-        alpha=0.8,
-        label="Placeholder Definitions",
-    )
+    # Colors: dark navy for regular, golden yellow for placeholders
+    color_regular =(242 / 255, 208 / 255, 131 / 255)
+    color_placeholder =  (16 / 255, 47 / 255, 71 / 255)
 
-    # Rest of the definitions are on top
-    plt.bar(
-        range(len(bin_labels)),
-        counts_reg,
-        bottom=counts_ph,
-        color="steelblue",
-        edgecolor="black",
-        alpha=0.7,
-        label="Rest of the Definitions",
-    )
+    # Create stacked bar chart (scoped font settings)
+    with plt.rc_context({"font.family": "Libertinus Serif"}):
+        plt.figure(figsize=(12, 6))
 
-    plt.xlabel("Cosine Similarity Range", fontsize=12)
-    plt.ylabel("Frequency", fontsize=12)
-    plt.title(
-        f"Distribution of Cosine Similarities (Stacked): {mode.capitalize()}",
-        fontsize=14,
-        fontweight="bold",
-    )
-    plt.xticks(range(len(bin_labels)), bin_labels, rotation=45, ha="right")
-    plt.grid(axis="y", alpha=0.3, linestyle="--")
-    plt.legend()
-
-    # Add value labels for total height
-    total_counts = counts_ph + counts_reg
-    for i, count in enumerate(total_counts):
-        if count > 0:
-            plt.text(
-                i,
-                count,
-                f"{int(count)}",
-                ha="center",
-                va="bottom",
-                fontsize=9,
-            )
-
-    # Statistics for Placeholder boxes
-    if len(sim_placeholders) > 0:
-        stats_text = "Placeholder Stats:\n"
-        stats_text += f"Count: {len(sim_placeholders)}\n"
-        stats_text += f"Mean: {ph_mean:.3f}\n"
-        stats_text += f"Std: {ph_std:.3f}"
-
-        plt.text(
-            0.98,
-            0.97,
-            stats_text,
-            transform=plt.gca().transAxes,
-            fontsize=10,
-            verticalalignment="top",
-            horizontalalignment="right",
-            bbox=dict(boxstyle="round", facecolor="#E37222", alpha=0.3),
+        # Placeholders are at the bottom
+        plt.bar(
+            range(len(bin_labels)),
+            counts_ph,
+            color=color_placeholder,
+            edgecolor="black",
+            alpha=0.8,
+            label="Placeholder Definitions",
         )
 
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.close()
+        # Rest of the definitions are on top
+        plt.bar(
+            range(len(bin_labels)),
+            counts_reg,
+            bottom=counts_ph,
+            color=color_regular,
+            edgecolor="black",
+            alpha=0.9,
+            label="Rest of the Definitions",
+        )
+
+        plt.xlabel("Cosine Similarity Range", fontsize=24)
+        plt.ylabel("Frequency", fontsize=24)
+        plt.xticks(range(len(bin_labels)), bin_labels, rotation=45, ha="right", fontsize=18)
+        plt.yticks(fontsize=18)
+        plt.grid(axis="y", alpha=0.3, linestyle="--")
+        plt.legend(loc="upper right", fontsize=24)
+
+        # Add value labels for total height
+        total_counts = counts_ph + counts_reg
+        for i, count in enumerate(total_counts):
+            if count > 0:
+                plt.text(
+                    i,
+                    count,
+                    f"{int(count)}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=18,
+                )
+
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+        plt.close()
 
     logger.info(f"Stacked distribution plot saved to: {output_path}")
 
 
 if __name__ == "__main__":
-    mode = "properties"  # Switch between "classes" or "properties"
+    mode = "classes"  # Switch between "classes" or "properties"
 
     # Define base paths relative to this script file
     script_dir = Path(__file__).resolve().parent
