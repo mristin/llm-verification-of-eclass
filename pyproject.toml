@@ -16,7 +16,6 @@ classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
 ]
@@ -37,6 +36,7 @@ dev = [
   "black==25.1.0",
   "mypy==1.18.1",
   "pylint==3.3.8",
+  "pandas-stubs>=2.3.2.250926", # <--- ADDED pandas-stubs to the correct dependency group
 ]
 
 [project.scripts]
@@ -66,10 +66,10 @@ disable = [
 ]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 
-[dependency-groups]
-dev = [
-    "pandas-stubs>=2.3.2.250926",
-]
+# [dependency-groups]
+# dev = [
+#     "pandas-stubs>=2.3.2.250926",
+# ]
