@@ -106,7 +106,7 @@ if __name__ == "__main__":
     mode = "classes"  # can be either "classes" or "properties"
 
     # trying very small values to find pathological cases
-    thresholds = [0.15, 0.1, 0.05, 0.01]
+    thresholds = [0.08763, 0.03, 0.01]
 
     script_path = Path(__file__).resolve()
     repo_root = script_path.parents[2]

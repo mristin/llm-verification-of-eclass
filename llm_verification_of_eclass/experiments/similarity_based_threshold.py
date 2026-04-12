@@ -204,8 +204,12 @@ def create_stacked_distribution_plot(
     # Separates placeholder values into separate list
     placeholders_df = results_df["definition"].isin(placeholder_list)
 
-    sim_placeholders = results_df[placeholders_df]["cosine_similarity"].to_numpy(dtype=np.float64)
-    sim_regular = results_df[~placeholders_df]["cosine_similarity"].to_numpy(dtype=np.float64)
+    sim_placeholders = results_df[placeholders_df]["cosine_similarity"].to_numpy(
+        dtype=np.float64
+    )
+    sim_regular = results_df[~placeholders_df]["cosine_similarity"].to_numpy(
+        dtype=np.float64
+    )
 
     # Calculate statistics for placeholders
     if len(sim_placeholders) > 0:
@@ -216,7 +220,9 @@ def create_stacked_distribution_plot(
         logger.info(f"  Mean: {ph_mean:.4f}")
         logger.info(f"  Standard Deviation: {ph_std:.4f}")
     else:
-        ph_mean, ph_std = 0.0, 0.0
+        ph_mean = np.float64(0.0)
+        ph_std = np.float64(0.0)
+
         logger.info(f"\nNo placeholder definitions found for mode: {mode}")
 
     # Bins for graph with range [0, 1] and step 0.1
@@ -237,7 +243,7 @@ def create_stacked_distribution_plot(
         color="#E37222",
         edgecolor="black",
         alpha=0.8,
-        label="Placeholder Definitions"
+        label="Placeholder Definitions",
     )
 
     # Rest of the definitions are on top
@@ -248,7 +254,7 @@ def create_stacked_distribution_plot(
         color="steelblue",
         edgecolor="black",
         alpha=0.7,
-        label="Rest of the Definitions"
+        label="Rest of the Definitions",
     )
 
     plt.xlabel("Cosine Similarity Range", fontsize=12)
@@ -308,8 +314,13 @@ if __name__ == "__main__":
 
     # Setting parameters based on mode
     if mode == "properties":
-        in_dir = script_dir / "../../data/extracted-properties/2-deduplicated-pair-properties"
-        out_dir = script_dir / "../../data/2-experiment/properties-placeholder-definitions"
+        in_dir = (
+            script_dir
+            / "../../data/extracted-properties/2-deduplicated-pair-properties"
+        )
+        out_dir = (
+            script_dir / "../../data/2-experiment/properties-placeholder-definitions"
+        )
         placeholder_list = PROPERTIES_PLACEHOLDER_DEFINITIONS
     elif mode == "classes":
         in_dir = script_dir / "../../data/extracted-classes/2-deduplicated-pair-classes"
@@ -327,7 +338,9 @@ if __name__ == "__main__":
     # Setup logger
     logger = LoggerFactory.get_logger(__name__)
     file_handler = logging.FileHandler(
-        out_dir / f"experiment-2-similarity-threshold-{mode}.txt", mode="w", encoding="utf-8"
+        out_dir / f"experiment-2-similarity-threshold-{mode}.txt",
+        mode="w",
+        encoding="utf-8",
     )
     file_handler.setLevel(logging.INFO)
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
@@ -375,8 +388,9 @@ if __name__ == "__main__":
 
     # Stacked distribution plot for known placeholder values
     stacked_plot_path = out_dir / f"similarity_distribution_stacked_{mode}.png"
-    create_stacked_distribution_plot(results_df, placeholder_list, stacked_plot_path, mode, logger)
-
+    create_stacked_distribution_plot(
+        results_df, placeholder_list, stacked_plot_path, mode, logger
+    )
 
     # Log summary statistics (General)
     logger.info("Statistics summary:\n")

@@ -76,7 +76,7 @@ def load_and_clean_data(csv_path: Path, logger: logging.Logger) -> pd.DataFrame:
 
 def process_exact_duplicates(
     df: pd.DataFrame, out_dir: Path, logger: logging.Logger
-) -> Tuple[pd.DataFrame, Dict[str, str]]:
+) -> Tuple[pd.DataFrame, Dict[str, str], Dict[str, str]]:
     """
     Finds rows with same definitions.
     1. Saves 'exact_duplicates.csv' with mapping from definition to preferred names that used it
@@ -118,7 +118,13 @@ def process_exact_duplicates(
     # Return unique definitions, needed for embedding lookup
     df_unique = df.drop_duplicates(subset=["definition"]).copy()
 
-    return df_unique, def_to_names_map
+    def_to_single_name_map = (
+        df.drop_duplicates(subset=["definition"])
+        .set_index("definition")["ref_str"]
+        .to_dict()
+    )
+
+    return df_unique, def_to_names_map, def_to_single_name_map
 
 
 def get_embeddings_for_search(
@@ -142,7 +148,9 @@ def get_embeddings_for_search(
 
     logger.info(f"---> {len(valid_texts)} unique definitions have embeddings.")
     if skipped > 0:
-        logger.warning(f"---> {skipped} definitions missing from pickle (will be skipped).")
+        logger.warning(
+            f"---> {skipped} definitions missing from pickle (will be skipped)."
+        )
 
     return valid_texts, np.array(valid_embeddings)
 
@@ -273,7 +281,7 @@ if __name__ == "__main__":
     # mode is either "classes" or "properties"
     mode = "properties"
 
-    thresholds_to_check = [0.08763, 0.03, 0.01]
+    thresholds_to_check = [0.08763, 0.03, 0.01, 0.09639]
 
     # only max threshold is used for function, rest are filtered from it
     max_threshold = max(thresholds_to_check)
@@ -310,7 +318,7 @@ if __name__ == "__main__":
         logger.addHandler(logging.StreamHandler())
         logger.addHandler(logging.FileHandler(out_dir / "experiment.log", mode="w"))
 
-    logger.info("=== Starting Duplicate Discovery Experiment ===")
+    logger.info("Starting Duplicate Discovery Experiment")
     logger.info(f"Thresholds: {thresholds_to_check}")
 
     # 1. Load Embeddings
@@ -328,7 +336,7 @@ if __name__ == "__main__":
     # 3. Exact duplicates, deduplication
     # df_unique contains unique definitions only
     # name_map contains the mapping from a definition to ALL preferred names
-    df_unique, name_map = process_exact_duplicates(df_data, out_dir, logger)
+    df_unique, name_map, single_name_map = process_exact_duplicates(df_data, out_dir, logger)
 
     # 4. embeddings
     search_texts, search_embs = get_embeddings_for_search(df_unique, emb_map, logger)
@@ -345,8 +353,8 @@ if __name__ == "__main__":
 
     # 6. Enrich with Preferred Names
     logger.info("Enriching results with preferred names...")
-    df_matches["preferred_names_a"] = df_matches["text_a"].map(name_map)
-    df_matches["preferred_names_b"] = df_matches["text_b"].map(name_map)
+    df_matches["preferred_names_a"] = df_matches["text_a"].map(single_name_map)
+    df_matches["preferred_names_b"] = df_matches["text_b"].map(single_name_map)
 
     cols = ["distance", "preferred_names_a", "text_a", "preferred_names_b", "text_b"]
     df_matches = df_matches[cols]
